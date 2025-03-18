@@ -3,8 +3,28 @@
 import { useState, useEffect } from 'react';
 import Navbar from '@/components/NavBar';
 
+// Define proper types for analytics data
+interface MonthlyApplication {
+  name: string;
+  count: number;
+}
+
+interface StatusCount {
+  name: string;
+  value: number;
+}
+
+interface AnalyticsData {
+  applicationsByMonth: MonthlyApplication[];
+  statusBreakdown: StatusCount[];
+  responseRate: number;
+  interviewRate: number;
+  offerRate: number;
+  averageResponseTime: number;
+}
+
 // Sample analytics data (replace with API call)
-const SAMPLE_DATA = {
+const SAMPLE_DATA: AnalyticsData = {
   applicationsByMonth: [
     { name: 'Jan', count: 5 },
     { name: 'Feb', count: 8 },
@@ -27,7 +47,7 @@ const SAMPLE_DATA = {
 };
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Simulate API call
@@ -42,7 +62,7 @@ export default function AnalyticsPage() {
   }, []);
 
   // Function to get status color
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): string => {
     switch (status.toLowerCase()) {
       case 'saved':
         return 'bg-gray-500';
@@ -60,7 +80,7 @@ export default function AnalyticsPage() {
   };
 
   // Function to calculate bar height based on maximum value
-  const calculateBarHeight = (value: number, maxValue: number) => {
+  const calculateBarHeight = (value: number, maxValue: number): number => {
     return (value / maxValue) * 100;
   };
 
@@ -96,7 +116,10 @@ export default function AnalyticsPage() {
   }
 
   // Calculate maximum value for the bar chart
-  const maxApplications = Math.max(...data.applicationsByMonth.map((item: any) => item.count));
+  const maxApplications = Math.max(...data.applicationsByMonth.map(item => item.count));
+
+  // Calculate total status count for percentage calculation
+  const totalStatusCount = data.statusBreakdown.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -158,7 +181,7 @@ export default function AnalyticsPage() {
               <p className="mt-1 text-sm text-gray-500">Number of job applications submitted each month</p>
               
               <div className="mt-6 h-64 flex items-end space-x-2 overflow-hidden">
-                {data.applicationsByMonth.map((month: any) => (
+                {data.applicationsByMonth.map((month) => (
                   <div key={month.name} className="relative flex-1 flex flex-col items-center">
                     <div 
                       className="absolute bottom-0 w-full bg-indigo-500 rounded-t-sm"
@@ -181,7 +204,7 @@ export default function AnalyticsPage() {
               <p className="mt-1 text-sm text-gray-500">Distribution of job applications by current status</p>
               
               <div className="mt-6 space-y-4">
-                {data.statusBreakdown.map((status: any) => (
+                {data.statusBreakdown.map((status) => (
                   <div key={status.name} className="space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center">
@@ -193,7 +216,7 @@ export default function AnalyticsPage() {
                     <div className="w-full bg-gray-200 rounded-full h-2.5">
                       <div 
                         className={`h-2.5 rounded-full ${getStatusColor(status.name)}`} 
-                        style={{ width: `${(status.value / data.statusBreakdown.reduce((sum: number, item: any) => sum + item.value, 0)) * 100}%` }}
+                        style={{ width: `${(status.value / totalStatusCount) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -273,7 +296,7 @@ export default function AnalyticsPage() {
                     <div className="ml-3">
                       <h4 className="text-sm font-medium text-yellow-800">Response Time</h4>
                       <p className="mt-1 text-sm text-yellow-700">
-                        The average response time is {data.averageResponseTime} days. Consider following up if you haven't heard back within 10-14 days.
+                        The average response time is {data.averageResponseTime} days. Consider following up if you haven&apos;t heard back within 10-14 days.
                       </p>
                     </div>
                   </div>

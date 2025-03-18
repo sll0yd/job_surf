@@ -6,8 +6,33 @@ import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/NavBar';
 import StatusBadge from '@/components/StatusBadge';
 
+// Define a proper interface for the job data
+interface JobData {
+  id: string;
+  company: string;
+  position: string;
+  location: string;
+  description: string;
+  salary: string;
+  url: string;
+  status: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
+  appliedDate?: string;
+  notes?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Define an interface for status options
+interface StatusOption {
+  value: string;
+  label: string;
+}
+
 // Sample job data (replace with API call)
-const SAMPLE_JOB = {
+const SAMPLE_JOB: JobData = {
   id: '1',
   company: 'Tech Solutions Inc.',
   position: 'Frontend Developer',
@@ -30,10 +55,10 @@ export default function JobDetailPage() {
   const router = useRouter();
   const jobId = params.id as string;
   
-  const [job, setJob] = useState<any>(null);
+  const [job, setJob] = useState<JobData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [newNote, setNewNote] = useState('');
-  const [statusOptions] = useState([
+  const [statusOptions] = useState<StatusOption[]>([
     { value: 'saved', label: 'Saved' },
     { value: 'applied', label: 'Applied' },
     { value: 'interview', label: 'Interview' },
@@ -54,8 +79,10 @@ export default function JobDetailPage() {
 
   // Handle status change
   const handleStatusChange = (newStatus: string) => {
+    if (!job) return;
+    
     // In a real app, you would update the status via API
-    setJob({...job, status: newStatus});
+    setJob({...job, status: newStatus as JobData['status']});
     // Show success message
     alert(`Status updated to ${newStatus}`);
   };
@@ -63,7 +90,7 @@ export default function JobDetailPage() {
   // Handle note submission
   const handleNoteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim()) return;
+    if (!job || !newNote.trim()) return;
     
     // In a real app, you would send this note to an API
     const timestamp = new Date().toLocaleString();
@@ -79,14 +106,14 @@ export default function JobDetailPage() {
   };
 
   // Format date
-  const formatDate = (dateString: string | undefined) => {
+  const formatDate = (dateString: string | undefined): string => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString();
   };
 
   // Handle job deletion
   const handleDelete = () => {
-    if (confirm('Are you sure you want to delete this job application?')) {
+    if (window.confirm('Are you sure you want to delete this job application?')) {
       // In a real app, you would delete via API
       alert('Job deleted successfully');
       router.push('/jobs');

@@ -6,8 +6,25 @@ import Link from 'next/link';
 import Navbar from '@/components/NavBar';
 import JobForm from '@/components/JobForm';
 
+// Define a proper interface for the job data
+interface JobData {
+  id: string;
+  company: string;
+  position: string;
+  location: string;
+  description: string;
+  salary: string;
+  url: string;
+  status: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
+  applied_date: string;
+  notes: string;
+  contact_name: string;
+  contact_email: string;
+  contact_phone: string;
+}
+
 // Sample job data (replace with API call)
-const SAMPLE_JOB = {
+const SAMPLE_JOB: JobData = {
   id: '1',
   company: 'Tech Solutions Inc.',
   position: 'Frontend Developer',
@@ -27,7 +44,7 @@ export default function EditJobPage() {
   const params = useParams();
   const jobId = params.id as string;
   
-  const [job, setJob] = useState<any>(null);
+  const [job, setJob] = useState<JobData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Simulate API call to fetch job details

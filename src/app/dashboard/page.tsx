@@ -6,8 +6,38 @@ import DashboardStats from '@/components/DashboardStats';
 import ActivityFeed from '@/components/ActivityFeed';
 import Link from 'next/link';
 
+// Define types for our sample data
+interface StatsData {
+  total: number;
+  saved: number;
+  applied: number;
+  interview: number;
+  offer: number;
+  rejected: number;
+}
+
+interface JobData {
+  id: string;
+  company: string;
+  position: string;
+  status: string;
+  date: string;
+}
+
+interface ActivityData {
+  id: string;
+  type: 'job_created' | 'status_changed' | 'note_added';
+  date: string;
+  description: string;
+  job?: {
+    id: string;
+    company: string;
+    position: string;
+  };
+}
+
 // Sample data (replace with API calls)
-const SAMPLE_STATS = {
+const SAMPLE_STATS: StatsData = {
   total: 12,
   saved: 2,
   applied: 5,
@@ -16,7 +46,7 @@ const SAMPLE_STATS = {
   rejected: 1,
 };
 
-const SAMPLE_ACTIVITIES = [
+const SAMPLE_ACTIVITIES: ActivityData[] = [
   {
     id: '1',
     type: 'job_created',
@@ -52,7 +82,7 @@ const SAMPLE_ACTIVITIES = [
   },
 ];
 
-const SAMPLE_JOBS = [
+const SAMPLE_JOBS: JobData[] = [
   {
     id: '101',
     company: 'Tech Solutions Inc.',
@@ -78,9 +108,10 @@ const SAMPLE_JOBS = [
 
 export default function Dashboard() {
   // In a real app, you would fetch this data from an API
-  const [stats, setStats] = useState(SAMPLE_STATS);
-  const [activities, setActivities] = useState(SAMPLE_ACTIVITIES);
-  const [recentJobs, setRecentJobs] = useState(SAMPLE_JOBS);
+  // Using destructuring to only keep the state variables we need
+  const [stats] = useState<StatsData>(SAMPLE_STATS);
+  const [activities] = useState<ActivityData[]>(SAMPLE_ACTIVITIES);
+  const [recentJobs] = useState<JobData[]>(SAMPLE_JOBS);
   const [isLoading, setIsLoading] = useState(false);
 
   // Simulate data loading
@@ -93,7 +124,7 @@ export default function Dashboard() {
   }, []);
 
   // Function to get status badge color
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): string => {
     switch (status) {
       case 'saved':
         return 'bg-gray-100 text-gray-800';
@@ -111,7 +142,7 @@ export default function Dashboard() {
   };
 
   // Function to format date
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
     return date.toLocaleDateString();
   };
