@@ -1,10 +1,8 @@
+// In middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
-/**
- * Middleware for handling authentication and routes protection
- */
 export async function middleware(request: NextRequest) {
   // Initialize the Supabase client
   const res = NextResponse.next();
@@ -62,14 +60,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
   
+  // If users hit the root and are NOT authenticated, allow them to see the home page
+  if (pathname === "/" && !session) {
+    return res;
+  }
+  
   return res;
 }
 
-/**
- * Configure which routes this middleware should run on
- */
 export const config = {
-  // Apply this middleware to all routes except static assets
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
