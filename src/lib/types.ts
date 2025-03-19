@@ -1,8 +1,8 @@
 // Job status type
 export type JobStatus = 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
 
-// Job data from the database
-export interface JobData {
+// Job data interface (renamed from JobData to Job)
+export interface Job {
   id: string;
   user_id: string;
   company: string;
@@ -24,7 +24,10 @@ export interface JobData {
   updated_at: string;
 }
 
-// Job form data (for create/update)
+// Alias JobData to Job for backward compatibility
+export type JobData = Job;
+
+// Job form data interface
 export interface JobFormData {
   company: string;
   position: string;
@@ -43,18 +46,54 @@ export interface JobFormData {
   rejected_date?: string;
 }
 
-// Status option for UI
-export interface StatusOption {
-  value: JobStatus;
-  label: string;
+// Update job data type
+export type UpdateJobData = Partial<JobFormData>;
+
+// Job filter parameters interface
+export interface JobFilterParams {
+  status?: string;
+  search?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
 }
 
-// Activity data
+// Dashboard statistics interface (renamed from StatsData to DashboardStats)
+export interface DashboardStats {
+  total: number;
+  saved: number;
+  applied: number;
+  interview: number;
+  offer: number;
+  rejected: number;
+  applicationRate?: number;
+  responseRate?: number;
+  interviewRate?: number;
+}
+
+// Alias StatsData to DashboardStats for backward compatibility
+export type StatsData = DashboardStats;
+
+// User authentication response interface
+export interface AuthResponse {
+  user?: {
+    id: string;
+    email: string;
+    name?: string;
+  };
+  session?: {
+    access_token: string;
+    refresh_token: string;
+  };
+}
+
+// Activity data interface
 export interface ActivityData {
   id: string;
-  type: 'job_created' | 'job_updated' | 'status_changed' | 'note_added' | 'job_deleted';
-  date: string;
+  user_id: string;
+  activity_type: string;
+  job_id?: string;
   description: string;
+  created_at: string;
   job?: {
     id: string;
     company: string;
@@ -62,20 +101,15 @@ export interface ActivityData {
   };
 }
 
-// Dashboard stats
-export interface StatsData {
-  total: number;
-  saved: number;
-  applied: number;
-  interview: number;
-  offer: number;
-  rejected: number;
-}
-
-// User profile data
-export interface UserProfile {
-  id: string;
-  email: string;
-  full_name?: string;
-  avatar_url?: string;
-}
+// Optional: Type assertion export to help with imports
+export const types = {
+  Job: {} as Job,
+  JobData: {} as JobData,
+  JobFormData: {} as JobFormData,
+  UpdateJobData: {} as UpdateJobData,
+  JobFilterParams: {} as JobFilterParams,
+  DashboardStats: {} as DashboardStats,
+  StatsData: {} as StatsData,
+  AuthResponse: {} as AuthResponse,
+  ActivityData: {} as ActivityData,
+};

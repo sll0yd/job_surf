@@ -53,9 +53,12 @@ export default function JobDetailPage() {
       try {
         const data = await jobsService.getJob(jobId);
         setJob(data);
-      } catch (err: any) {
+      } catch (err) {
         console.error("Error loading job:", err);
-        setError(err.message || "Failed to load job details");
+        const errorMessage = err instanceof Error 
+          ? err.message 
+          : 'Failed to load job details';
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -73,9 +76,12 @@ export default function JobDetailPage() {
       setJob(updatedJob);
       // Show success message (You can replace alert with a toast notification)
       alert(`Status updated to ${newStatus}`);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error updating status:", err);
-      alert(`Failed to update status: ${err.message}`);
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Failed to update status';
+      alert(`Failed to update status: ${errorMessage}`);
     }
   };
 
@@ -90,9 +96,12 @@ export default function JobDetailPage() {
       setNewNote("");
       // Show success message (You can replace alert with a toast notification)
       alert("Note added successfully");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error adding note:", err);
-      alert(`Failed to add note: ${err.message}`);
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : 'Failed to add note';
+      alert(`Failed to add note: ${errorMessage}`);
     }
   };
 
@@ -113,9 +122,12 @@ export default function JobDetailPage() {
         await jobsService.deleteJob(job.id);
         alert("Job deleted successfully");
         router.push("/jobs");
-      } catch (err: any) {
+      } catch (err) {
         console.error("Error deleting job:", err);
-        alert(`Failed to delete job: ${err.message}`);
+        const errorMessage = err instanceof Error 
+          ? err.message 
+          : 'Failed to delete job';
+        alert(`Failed to delete job: ${errorMessage}`);
       }
     }
   };

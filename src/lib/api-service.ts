@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { JobData, JobFormData, ActivityData, StatsData } from './types';
+import { Job, JobFormData, ActivityData, StatsData } from './types';
 
 /**
  * Jobs API service - handles all interactions with the Supabase database
@@ -8,7 +8,7 @@ export const jobsService = {
   /**
    * Fetch all jobs for the current user
    */
-  async getJobs(filters?: { status?: string; search?: string }) {
+  async getJobs(filters?: { status?: string; search?: string }): Promise<Job[]> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -40,13 +40,13 @@ export const jobsService = {
       throw new Error(error.message);
     }
 
-    return data as JobData[];
+    return data as Job[];
   },
 
   /**
    * Get a job by ID
    */
-  async getJob(id: string) {
+  async getJob(id: string): Promise<Job> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -63,13 +63,13 @@ export const jobsService = {
       throw new Error(error.message);
     }
 
-    return data as JobData;
+    return data as Job;
   },
 
   /**
    * Create a new job
    */
-  async createJob(job: JobFormData) {
+  async createJob(job: JobFormData): Promise<Job> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -98,13 +98,13 @@ export const jobsService = {
       description: `Added ${data.position} at ${data.company}`
     });
 
-    return data as JobData;
+    return data as Job;
   },
 
   /**
    * Update a job
    */
-  async updateJob(id: string, updates: Partial<JobFormData>) {
+  async updateJob(id: string, updates: Partial<JobFormData>): Promise<Job> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -129,13 +129,13 @@ export const jobsService = {
       description: `Updated ${data.position} at ${data.company}`
     });
 
-    return data as JobData;
+    return data as Job;
   },
 
   /**
    * Delete a job
    */
-  async deleteJob(id: string) {
+  async deleteJob(id: string): Promise<boolean> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -173,7 +173,7 @@ export const jobsService = {
   /**
    * Update a job's status
    */
-  async updateJobStatus(id: string, status: string) {
+  async updateJobStatus(id: string, status: string): Promise<Job> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -225,13 +225,13 @@ export const jobsService = {
       description: `Changed status from ${currentJob.status} to ${status} for ${data.position} at ${data.company}`
     });
 
-    return data as JobData;
+    return data as Job;
   },
 
   /**
    * Add a note to a job
    */
-  async addNote(id: string, note: string) {
+  async addNote(id: string, note: string): Promise<Job> {
     // Get current user
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
@@ -278,7 +278,7 @@ export const jobsService = {
       description: `Added note to ${data.position} at ${data.company}`
     });
 
-    return data as JobData;
+    return data as Job;
   },
 
   /**
@@ -335,9 +335,11 @@ export const jobsService = {
 
     return data.map(activity => ({
       id: activity.id,
-      type: activity.activity_type,
-      date: activity.created_at,
+      user_id: activity.user_id,
+      activity_type: activity.activity_type,
+      job_id: activity.job_id,
       description: activity.description,
+      created_at: activity.created_at,
       job: activity.jobs ? {
         id: activity.jobs.id,
         company: activity.jobs.company,

@@ -80,9 +80,13 @@ export default function EditJobPage() {
           offer_date: data.offer_date ? new Date(data.offer_date).toISOString().substring(0, 10) : undefined,
           rejected_date: data.rejected_date ? new Date(data.rejected_date).toISOString().substring(0, 10) : undefined,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error loading job:', err);
-        setError(err.message || 'Failed to load job details');
+        setError(
+          err instanceof Error 
+            ? err.message 
+            : 'Failed to load job details'
+        );
       } finally {
         setIsLoading(false);
       }
@@ -160,9 +164,13 @@ export default function EditJobPage() {
       
       // Redirect back to the job detail page
       router.push(`/jobs/${jobId}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating job:', err);
-      setError(err.message || 'Failed to update job. Please try again.');
+      setError(
+        err instanceof Error 
+          ? err.message 
+          : 'Failed to update job. Please try again.'
+      );
     } finally {
       setIsSaving(false);
     }

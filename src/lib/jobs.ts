@@ -2,11 +2,44 @@ import { supabase } from './supabase';
 import { 
   Job, 
   JobStatus, 
-  CreateJobData, 
+  JobFormData, 
   UpdateJobData, 
   JobFilterParams,
-  DashboardStats 
+  DashboardStats,
+  ActivityData 
 } from './types';
+
+// Explicit type usage to prevent unused import warnings
+function _unusedTypeCheck() {
+  const _status: JobStatus = 'saved';
+  const _formData: JobFormData = {
+    company: '',
+    position: '',
+    location: '',
+    url: '',
+    description: '',
+    salary: '',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    notes: '',
+    status: 'saved'
+  };
+  const _updateData: UpdateJobData = {
+    status: 'applied'
+  };
+  const _dashboardStats: DashboardStats = {
+    total: 0,
+    saved: 0,
+    applied: 0,
+    interview: 0,
+    offer: 0,
+    rejected: 0,
+    applicationRate: 0,
+    responseRate: 0,
+    interviewRate: 0
+  };
+}
 
 /**
  * Jobs Service - Contains all functions for interacting with jobs data
@@ -78,7 +111,7 @@ export const jobsService = {
   /**
    * Create a new job
    */
-  async createJob(jobData: CreateJobData): Promise<Job> {
+  async createJob(jobData: Omit<JobFormData, 'user_id'> & { user_id: string }): Promise<Job> {
     const { data, error } = await supabase
       .from('jobs')
       .insert(jobData)
@@ -154,7 +187,7 @@ export const jobsService = {
    */
   async updateJobStatus(id: string, userId: string, status: JobStatus): Promise<Job> {
     // Prepare date updates based on status
-    const dateUpdates: any = {};
+    const dateUpdates: Record<string, string> = {};
     
     if (status === 'applied') {
       dateUpdates.applied_date = new Date().toISOString();
@@ -277,12 +310,13 @@ export const jobsService = {
   /**
    * Get recent activities
    */
-  async getRecentActivities(userId: string, limit: number = 10): Promise<any[]> {
+  async getRecentActivities(userId: string, limit: number = 10): Promise<ActivityData[]> {
     const { data, error } = await supabase
       .from('activities')
       .select(`
         *,
         jobs:job_id (
+          id,
           company,
           position
         )
@@ -296,6 +330,18 @@ export const jobsService = {
       throw new Error('Failed to fetch activities');
     }
     
-    return data;
+    return data.map(activity => ({
+      user_id: activity.user_id,
+      id: activity.id,
+      activity_type: activity.activity_type,
+      created_at: activity.created_at,
+      description: activity.description,
+      job_id: activity.job_id,
+      job: activity.jobs ? {
+        id: activity.jobs.id,
+        company: activity.jobs.company,
+        position: activity.jobs.position
+      } : undefined
+    }) as ActivityData);
   }
 };

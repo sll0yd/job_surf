@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { AuthError } from '@supabase/supabase-js';
 
 export default function SignUp() {
   const router = useRouter();
@@ -47,6 +48,24 @@ export default function SignUp() {
     return true;
   };
 
+  const handleGoogleSignUp = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      console.error('Google sign-up error:', err);
+      setError('Failed to sign up with Google');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -58,7 +77,7 @@ export default function SignUp() {
     
     try {
       // Sign up with Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -68,12 +87,12 @@ export default function SignUp() {
         },
       });
       
-      if (error) {
-        throw error;
+      if (signUpError) {
+        throw signUpError;
       }
       
       // Check if email confirmation is required
-      if (data?.user?.identities?.length === 0) {
+      if (signUpData?.user?.identities?.length === 0) {
         // User already exists
         setError('An account with this email already exists. Please sign in instead.');
       } else {
@@ -87,15 +106,21 @@ export default function SignUp() {
         setFullName('');
         
         // Redirect to sign in after a short delay if email confirmation is not required
-        if (data.session) {
+        if (signUpData.session) {
           setTimeout(() => {
             router.push('/dashboard');
           }, 2000);
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Signup error:', err);
-      setError(err.message || 'Failed to create account. Please try again.');
+      
+      // Type-safe error handling
+      const errorMessage = err instanceof AuthError 
+        ? err.message 
+        : 'Failed to create account. Please try again.';
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -251,18 +276,7 @@ export default function SignUp() {
 
             <div className="mt-6">
               <button
-                onClick={async () => {
-                  const { data, error } = await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: {
-                      redirectTo: `${window.location.origin}/auth/callback`,
-                    },
-                  });
-                  
-                  if (error) {
-                    setError(error.message);
-                  }
-                }}
+                onClick={handleGoogleSignUp}
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">

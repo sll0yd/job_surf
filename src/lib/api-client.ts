@@ -7,7 +7,9 @@ import {
   JobFormData, 
   UpdateJobData,
   JobFilterParams,
-  DashboardStats
+  DashboardStats,
+  AuthResponse,
+  ActivityData
 } from './types';
 
 // Base API URL - automatically uses the correct URL based on environment
@@ -21,7 +23,7 @@ const API_BASE_URL = process.env.NODE_ENV === 'development'
 async function apiRequest<T>(
   endpoint: string, 
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  data?: any
+  data?: unknown
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
@@ -101,14 +103,14 @@ export const apiClient = {
    * Create a new job
    */
   async createJob(jobData: JobFormData): Promise<Job> {
-    return apiRequest<Job>('/jobs', 'POST', jobData);
+    return apiRequest<Job>('/jobs', 'POST', jobData as unknown);
   },
   
   /**
    * Update a job
    */
   async updateJob(id: string, updates: UpdateJobData): Promise<Job> {
-    return apiRequest<Job>(`/jobs/${id}`, 'PUT', updates);
+    return apiRequest<Job>(`/jobs/${id}`, 'PUT', updates as unknown);
   },
   
   /**
@@ -142,8 +144,8 @@ export const apiClient = {
   /**
    * Get recent activities
    */
-  async getRecentActivities(limit: number = 10): Promise<any[]> {
-    return apiRequest<any[]>(`/activities?limit=${limit}`);
+  async getRecentActivities(limit: number = 10): Promise<ActivityData[]> {
+    return apiRequest<ActivityData[]>(`/activities?limit=${limit}`);
   },
   
   /**
@@ -153,15 +155,15 @@ export const apiClient = {
     /**
      * Sign up
      */
-    async signUp(email: string, password: string, name: string): Promise<any> {
-      return apiRequest('/auth/signup', 'POST', { email, password, name });
+    async signUp(email: string, password: string, name: string): Promise<AuthResponse> {
+      return apiRequest<AuthResponse>('/auth/signup', 'POST', { email, password, name });
     },
     
     /**
      * Sign in
      */
-    async signIn(email: string, password: string): Promise<any> {
-      return apiRequest('/auth/signin', 'POST', { email, password });
+    async signIn(email: string, password: string): Promise<AuthResponse> {
+      return apiRequest<AuthResponse>('/auth/signin', 'POST', { email, password });
     },
     
     /**
@@ -188,8 +190,8 @@ export const apiClient = {
     /**
      * Get current user
      */
-    async getUser(): Promise<any> {
-      return apiRequest('/auth/user');
+    async getUser(): Promise<AuthResponse> {
+      return apiRequest<AuthResponse>('/auth/user');
     }
   }
 };

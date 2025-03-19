@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { AuthError } from '@supabase/supabase-js';
 
 export default function SignIn() {
   const router = useRouter();
@@ -25,22 +26,46 @@ export default function SignIn() {
     
     try {
       // Sign in with Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       
-      if (error) {
-        throw error;
+      if (authError) {
+        throw authError;
       }
       
       // Redirect to dashboard on successful login
       router.push('/dashboard');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Login error:', err);
-      setError(err.message || 'Failed to sign in. Please check your credentials.');
+      
+      // Type-safe error handling
+      const errorMessage = err instanceof AuthError 
+        ? err.message 
+        : 'Failed to sign in. Please check your credentials.';
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      console.error('Google sign-in error:', err);
+      setError('Failed to sign in with Google');
     }
   };
 
@@ -158,18 +183,7 @@ export default function SignIn() {
 
             <div className="mt-6">
               <button
-                onClick={async () => {
-                  const { data, error } = await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: {
-                      redirectTo: `${window.location.origin}/auth/callback`,
-                    },
-                  });
-                  
-                  if (error) {
-                    setError(error.message);
-                  }
-                }}
+                onClick={handleGoogleSignIn}
                 className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">

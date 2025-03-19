@@ -1,10 +1,29 @@
-import { NextAuthOptions, Session, User } from 'next-auth';
-import { JWT } from 'next-auth/jwt';
+import { 
+  NextAuthOptions, 
+  Session
+} from 'next-auth';
+import { DefaultSession } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { supabase } from './supabase';
 
-// Extended Session type with user ID
+// Extend the default NextAuth User interface
+declare module 'next-auth' {
+  interface User {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+  }
+
+  interface Session {
+    user: User & DefaultSession['user'];
+    supabaseAccessToken?: string;
+    googleAccessToken?: string;
+  }
+}
+
+// Extended Session type with additional tokens
 export interface ExtendedSession extends Session {
   user: {
     id: string;
@@ -13,6 +32,16 @@ export interface ExtendedSession extends Session {
     image?: string | null;
   };
   supabaseAccessToken?: string;
+  googleAccessToken?: string;
+}
+
+// Declare a Token interface to extend the default JWT
+declare module 'next-auth/jwt' {
+  interface JWT {
+    id: string;
+    supabaseAccessToken?: string;
+    googleAccessToken?: string;
+  }
 }
 
 // Auth configuration options
@@ -92,22 +121,17 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         
-        // Store Supabase access token if using OAuth
-        if (account?.provider === 'google') {
+        // Store Google access token if using OAuth
+        if (account && account.provider === 'google') {
           try {
-            // Create a Supabase user linked to OAuth
-            const { data, error } = await supabase.auth.signInWithOAuth({
-              provider: 'google',
-              options: {
-                redirectTo: `${process.env.NEXTAUTH_URL}/auth/callback`,
-              },
-            });
+            const googleAccessToken = account.access_token;
             
-            if (!error && data) {
-              token.supabaseAccessToken = data.session?.access_token;
+            // If we have an access token, we can add it to our token
+            if (googleAccessToken) {
+              token.googleAccessToken = googleAccessToken;
             }
           } catch (error) {
-            console.error('Supabase OAuth error:', error);
+            console.error('OAuth token handling error:', error);
           }
         }
       }
@@ -115,10 +139,15 @@ export const authOptions: NextAuthOptions = {
     },
     
     // Add custom properties to session
-    async session({ session, token }: { session: any; token: JWT }) {
+    async session({ session, token }) {
       if (token) {
-        session.user.id = token.id;
-        session.supabaseAccessToken = token.supabaseAccessToken;
+        // Add user ID to session
+        session.user.id = token.id as string;
+        
+        // Add Google access token if available
+        if (token.googleAccessToken) {
+          session.googleAccessToken = token.googleAccessToken;
+        }
       }
       return session as ExtendedSession;
     },

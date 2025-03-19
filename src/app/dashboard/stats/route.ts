@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { Database } from '@/lib/database.types';
@@ -6,7 +6,7 @@ import { Database } from '@/lib/database.types';
 /**
  * GET /api/dashboard/stats - Get dashboard statistics for the current user
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
@@ -44,13 +44,13 @@ export async function GET(request: NextRequest) {
     const rejected = jobs.filter(job => job.status === 'rejected').length;
     
     // Calculate application rate (applications per week)
-    const jobsWithAppliedDate = jobs.filter(job => job.applied_date);
+    const jobsWithAppliedDate = jobs.filter(job => job.applied_date !== null);
     let applicationRate = 0;
     
     if (jobsWithAppliedDate.length > 0) {
       // Find the earliest application date
       const oldestDate = new Date(
-        Math.min(...jobsWithAppliedDate.map(job => new Date(job.applied_date).getTime()))
+        Math.min(...jobsWithAppliedDate.map(job => new Date(job.applied_date!).getTime()))
       );
       
       const now = new Date();
