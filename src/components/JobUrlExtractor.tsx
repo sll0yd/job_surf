@@ -1,6 +1,5 @@
 // src/components/JobUrlExtractor.tsx
 import React, { useState } from 'react';
-import { aiJobService } from '@/lib/openai-service';
 import { JobFormData } from '@/lib/types';
 
 interface JobUrlExtractorProps {
@@ -53,8 +52,68 @@ export default function JobUrlExtractor({
     setIsLoading(true);
     
     try {
-      // Use our AI service to extract job details
-      const jobData = await aiJobService.extractJobFromUrl(url);
+      // Call the server API to extract job details
+      const response = await fetch('/api/scrape-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to scrape URL');
+      }
+
+      const { content } = await response.json();
+
+      // Then, use AI to extract structured job data
+      const aiResponse = await fetch('/api/analyze-job', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content, url }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorData = await aiResponse.json();
+        throw new Error(errorData.message || 'Failed to analyze job content');
+      }
+
+      const parsedData = await aiResponse.json();
+      
+      // Convert the parsed data to match our JobFormData format
+      const jobData: JobFormData = {
+        company: parsedData.company || '',
+        position: parsedData.position || '',
+        location: parsedData.location || '',
+        description: parsedData.description || '',
+        salary: parsedData.salary || '',
+        url: url,
+        status: 'saved',
+        contact_name: '',
+        contact_email: '',
+        contact_phone: '',
+        notes: '',
+      };
+
+      // If requirements or qualifications were extracted, add them to notes
+      if (parsedData.requirements?.length || parsedData.qualifications?.length) {
+        let notes = '';
+        
+        if (parsedData.requirements?.length) {
+          notes += "Requirements:\n" + parsedData.requirements.map((req: string) => `• ${req}`).join('\n') + '\n\n';
+        }
+        
+        if (parsedData.qualifications?.length) {
+          notes += "Qualifications:\n" + parsedData.qualifications.map((qual: string) => `• ${qual}`).join('\n');
+        }
+        
+        jobData.notes = notes;
+      }
+
       onJobExtracted(jobData);
     } catch (err) {
       console.error('Error extracting job:', err);

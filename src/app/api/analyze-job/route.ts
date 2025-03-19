@@ -2,16 +2,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import OpenAI from 'openai';
-import { ParsedJobData } from '@/lib/openai-service';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Define interface for parsed job data
+interface ParsedJobData {
+  company: string;
+  position: string;
+  location: string;
+  description: string;
+  salary?: string;
+  requirements?: string[];
+  qualifications?: string[];
+}
 
 /**
- * API route that analyzes job posting content using AI
+ * API route that analyzes job posting content
+ * Note: In a production environment, this would use OpenAI or another AI service
  */
 export async function POST(request: NextRequest) {
   try {
@@ -38,60 +43,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // In a real app, this would use OpenAI or another AI service
+    // For now, we'll use a simple parsing function to extract what we can
     
-    // Define the system prompt
-    const systemPrompt = `
-    You are an expert job posting analyzer. Extract structured information from job postings.
-    Your task is to analyze the HTML content of a job posting and extract the following information:
+    // Simple extraction logic (just for demo purposes)
+    const extractedData = simpleJobParser(content, url);
     
-    1. Company name
-    2. Job position/title
-    3. Location (including remote if specified)
-    4. Salary information (if available)
-    5. Job description (summarized in 3-4 sentences)
-    6. Key requirements (as bullet points)
-    7. Qualifications (as bullet points)
-    
-    Return the information in JSON format with the following keys:
-    {
-      "company": string,
-      "position": string,
-      "location": string,
-      "salary": string or null if not found,
-      "description": string,
-      "requirements": array of strings,
-      "qualifications": array of strings
-    }
-    
-    If you cannot determine a particular field, use null for that field.
-    Do not include any explanations or additional information outside the JSON object.
-    `;
-    
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", // or gpt-4 for better accuracy
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Job URL: ${url}\n\nHTML Content: ${content.substring(0, 15000)}` }
-      ],
-      response_format: { type: "json_object" }
-    });
-    
-    // Parse the response
-    const responseText = completion.choices[0].message.content;
-    let parsedData: ParsedJobData;
-    
-    try {
-      parsedData = JSON.parse(responseText || '{}') as ParsedJobData;
-    } catch (err) {
-      console.error('Error parsing OpenAI response:', err);
-      return NextResponse.json(
-        { message: 'Failed to parse job information' },
-        { status: 500 }
-      );
-    }
-    
-    return NextResponse.json(parsedData);
+    return NextResponse.json(extractedData);
   } catch (error) {
     console.error('Error in POST /api/analyze-job:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to analyze job content';
@@ -100,4 +59,133 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * A simple job parser that looks for common patterns in job postings
+ * This is a very basic implementation and would be replaced by AI in production
+ */
+function simpleJobParser(content: string, url: string): ParsedJobData {
+  // Convert to plain text and lowercase for easier parsing
+  const plainText = content.replace(/<[^>]*>?/gm, ' ').toLowerCase();
+  
+  // Extract company name - look for common patterns
+  let company = extractByPattern(plainText, [
+    /company:\s*([^,\n.]+)/i,
+    /at\s+([^,\n.]+)\s+we/i,
+    /about\s+([^,\n.]+):/i
+  ]);
+  
+  // If company not found, try to extract from URL
+  if (!company) {
+    try {
+      const urlObj = new URL(url);
+      company = urlObj.hostname.replace('www.', '').split('.')[0];
+      // Capitalize the first letter
+      company = company.charAt(0).toUpperCase() + company.slice(1);
+    } catch (e) {
+      company = 'Unknown Company';
+    }
+  }
+  
+  // Extract position/job title
+  let position = extractByPattern(plainText, [
+    /job title:\s*([^,\n.]+)/i,
+    /position:\s*([^,\n.]+)/i,
+    /hiring\s+a\s+([^,\n.]+)/i,
+    /hiring\s+([^,\n.]+)/i
+  ]);
+  
+  if (!position) {
+    // Find the first line that might be a job title (typically at the beginning)
+    const lines = plainText.split('\n').filter(line => line.trim().length > 0);
+    if (lines.length > 0) {
+      position = lines[0].trim();
+      if (position.length > 50) position = position.substring(0, 50); // Truncate if too long
+    } else {
+      position = 'Unknown Position';
+    }
+  }
+  
+  // Extract location
+  const location = extractByPattern(plainText, [
+    /location:\s*([^,\n.]+)/i,
+    /based in\s+([^,\n.]+)/i,
+    /located in\s+([^,\n.]+)/i,
+    /position is\s+([^,\n.]+)\s+based/i
+  ]) || 'Remote / Not Specified';
+  
+  // Extract salary if available
+  const salary = extractByPattern(plainText, [
+    /salary:\s*([^,\n.]+)/i,
+    /compensation:\s*([^,\n.]+)/i,
+    /pay:\s*([^,\n.]+)/i,
+    /\$([0-9,]+\s*-\s*[0-9,]+)/i,
+    /\$([0-9,]+\s*per\s*year)/i,
+    /\$([0-9,]+k\s*-\s*[0-9,]+k)/i
+  ]);
+  
+  // Extract a short description (first paragraph that looks like a description)
+  let description = '';
+  const paragraphs = plainText.split('\n\n');
+  for (const para of paragraphs) {
+    if (para.length > 50 && para.length < 500 && !para.includes('requirements') && !para.includes('qualifications')) {
+      description = para.trim();
+      break;
+    }
+  }
+  if (!description && paragraphs.length > 0) {
+    description = paragraphs[0].trim();
+  }
+  
+  // Find requirements section
+  const requirementsMatch = plainText.match(/requirements:?(.*?)(?:responsibilities|qualifications|about you|what you'll do|what you will do|about the role|expected|we offer)/is);
+  const requirements = requirementsMatch ? 
+    extractBulletPoints(requirementsMatch[1]) : 
+    [];
+  
+  // Find qualifications section
+  const qualificationsMatch = plainText.match(/qualifications:?(.*?)(?:requirements|responsibilities|about you|what you'll do|what you will do|about the role|expected|we offer)/is);
+  const qualifications = qualificationsMatch ? 
+    extractBulletPoints(qualificationsMatch[1]) : 
+    [];
+  
+  return {
+    company,
+    position,
+    location,
+    description: description || 'No description available',
+    salary: salary || undefined,
+    requirements: requirements.length > 0 ? requirements : undefined,
+    qualifications: qualifications.length > 0 ? qualifications : undefined
+  };
+}
+
+/**
+ * Helper function to extract text using an array of regex patterns
+ */
+function extractByPattern(text: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Helper function to extract bullet points from text
+ */
+function extractBulletPoints(text: string): string[] {
+  if (!text) return [];
+  
+  // Split by common bullet point markers
+  const lines = text.split(/[\n•\-\*]+/).map(line => line.trim()).filter(line => line.length > 0);
+  
+  // Keep only reasonably sized bullet points (not too short, not too long)
+  return lines
+    .filter(line => line.length > 10 && line.length < 200)
+    .map(line => line.charAt(0).toUpperCase() + line.slice(1)) // Capitalize first letter
+    .slice(0, 5); // Limit to 5 bullet points
 }

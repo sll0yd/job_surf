@@ -1,4 +1,3 @@
-// src/app/jobs/new/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,8 +7,8 @@ import Navbar from '@/components/NavBar';
 import { jobsService } from '@/lib/api-service';
 import { JobFormData, JobStatus } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import JobUrlExtractor from '@/components/JobUrlExtractor';
-import { aiJobService } from '@/lib/openai-service';
+
+
 
 // Initial form state
 const initialFormData: JobFormData = {
@@ -25,6 +24,184 @@ const initialFormData: JobFormData = {
   notes: '',
   status: 'saved' as JobStatus,
 };
+
+// Interface for the parsed job data from API
+interface ParsedJobData {
+  company: string;
+  position: string;
+  location: string;
+  description: string;
+  salary?: string;
+  requirements?: string[];
+  qualifications?: string[];
+}
+
+// Interface for the URL extractor component
+interface JobUrlExtractorProps {
+  onJobExtracted: (jobData: JobFormData) => void;
+  onError: (error: string) => void;
+  isLoading: boolean;
+  setIsLoading: (loading: boolean) => void;
+}
+
+// Inline implementation of JobUrlExtractor to avoid import issues
+function JobUrlExtractor({ 
+  onJobExtracted, 
+  onError, 
+  isLoading, 
+  setIsLoading 
+}: JobUrlExtractorProps) {
+  const [url, setUrl] = useState('');
+  const [isValidUrl, setIsValidUrl] = useState(true);
+
+  // Validate URL
+  const validateUrl = (input: string): boolean => {
+    try {
+      new URL(input);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Handle URL input change
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputUrl = e.target.value;
+    setUrl(inputUrl);
+    
+    // Only validate if there's actually input
+    if (inputUrl.length > 0) {
+      setIsValidUrl(validateUrl(inputUrl));
+    } else {
+      setIsValidUrl(true);
+    }
+  };
+
+  // Extract job details from URL
+  const extractJobDetails = async () => {
+    if (!url || !validateUrl(url)) {
+      setIsValidUrl(false);
+      onError('Please enter a valid URL');
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Call the server API to extract job details
+      const response = await fetch('/api/scrape-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json() as { message: string };
+        throw new Error(errorData.message || 'Failed to scrape URL');
+      }
+
+      const { content } = await response.json() as { content: string };
+
+      // Then, use AI to extract structured job data
+      const aiResponse = await fetch('/api/analyze-job', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content, url }),
+      });
+
+      if (!aiResponse.ok) {
+        const errorData = await response.json() as { message: string };
+        throw new Error(errorData.message || 'Failed to analyze job content');
+      }
+
+      const parsedData = await aiResponse.json() as ParsedJobData;
+      
+      // Convert the parsed data to match our JobFormData format
+      const jobData: JobFormData = {
+        company: parsedData.company || '',
+        position: parsedData.position || '',
+        location: parsedData.location || '',
+        description: parsedData.description || '',
+        salary: parsedData.salary || '',
+        url: url,
+        status: 'saved',
+        contact_name: '',
+        contact_email: '',
+        contact_phone: '',
+        notes: '',
+      };
+
+      // If requirements or qualifications were extracted, add them to notes
+      if (parsedData.requirements?.length || parsedData.qualifications?.length) {
+        let notes = '';
+        
+        if (parsedData.requirements?.length) {
+          notes += "Requirements:\n" + parsedData.requirements.map((req: string) => `• ${req}`).join('\n') + '\n\n';
+        }
+        
+        if (parsedData.qualifications?.length) {
+          notes += "Qualifications:\n" + parsedData.qualifications.map((qual: string) => `• ${qual}`).join('\n');
+        }
+        
+        jobData.notes = notes;
+      }
+
+      onJobExtracted(jobData);
+    } catch (err) {
+      console.error('Error extracting job:', err);
+      // Convert error to string in a type-safe way
+      let errorMessage = 'Failed to extract job details';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      onError(errorMessage || 'Please try again or enter details manually.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-1 flex rounded-md shadow-sm">
+      <input
+        type="url"
+        value={url}
+        onChange={handleUrlChange}
+        className={`flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm border ${
+          !isValidUrl ? 'border-red-300' : 'border-gray-300'
+        }`}
+        placeholder="https://example.com/job-posting"
+        disabled={isLoading}
+      />
+      <button
+        type="button"
+        onClick={extractJobDetails}
+        disabled={isLoading || !url}
+        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+      >
+        {isLoading ? (
+          <>
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Extracting...
+          </>
+        ) : (
+          <>
+            <svg className="mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Extract Data
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -173,9 +350,15 @@ export default function NewJobPage() {
       
       // Redirect to the jobs list
       router.push('/jobs');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating job:', err);
-      setError(err.message || 'Failed to create job. Please try again.');
+      
+      // Type-safe error handling
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to create job. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -557,60 +740,60 @@ export default function NewJobPage() {
                   </label>
                   <div className="mt-1">
                     <input
-                      type="tel"
-                      name="contact_phone"
-                      id="contact_phone"
-                      value={formData.contact_phone}
-                      onChange={handleChange}
-                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+type="tel"
+name="contact_phone"
+id="contact_phone"
+value={formData.contact_phone}
+onChange={handleChange}
+className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+/>
+</div>
+</div>
+</div>
+</div>
 
-            {/* Notes */}
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Notes</h3>
-              <div className="mt-6">
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-                  Notes
-                </label>
-                <div className="mt-1">
-                  <textarea
-                    id="notes"
-                    name="notes"
-                    rows={4}
-                    value={formData.notes}
-                    onChange={handleChange}
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    placeholder="Add any notes about this job application..."
-                  />
-                </div>
-              </div>
-            </div>
+{/* Notes */}
+<div className="px-4 py-5 sm:p-6">
+<h3 className="text-lg font-medium leading-6 text-gray-900">Notes</h3>
+<div className="mt-6">
+<label htmlFor="notes" className="block text-sm font-medium text-gray-700">
+Notes
+</label>
+<div className="mt-1">
+<textarea
+id="notes"
+name="notes"
+rows={4}
+value={formData.notes}
+onChange={handleChange}
+className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+placeholder="Add any notes about this job application..."
+/>
+</div>
+</div>
+</div>
 
-            {/* Form Actions */}
-            <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
-                disabled={isLoading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-              >
-                {isLoading ? 'Saving...' : 'Save Job'}
-              </button>
-            </div>
-          </div>
-        </form>
-      </main>
-    </div>
-  );
+{/* Form Actions */}
+<div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
+<button
+type="button"
+onClick={() => router.back()}
+className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
+disabled={isLoading}
+>
+Cancel
+</button>
+<button
+type="submit"
+disabled={isLoading}
+className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+>
+{isLoading ? 'Saving...' : 'Save Job'}
+</button>
+</div>
+</div>
+</form>
+</main>
+</div>
+);
 }
