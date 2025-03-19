@@ -2,14 +2,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { Database } from '@/lib/database.types';
 
 /**
  * Scrapes the content from a given URL
  */
 export async function POST(request: NextRequest) {
   try {
-    // Initialize Supabase client for auth check
-    const supabase = createRouteHandlerClient({ cookies });
+    // Initialize Supabase client for auth check - make sure to await cookies
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore });
     
     // Get the current user session
     const { data: { session } } = await supabase.auth.getSession();
@@ -33,13 +35,13 @@ export async function POST(request: NextRequest) {
     }
     
     // Validate URL
-    let validatedUrl: URL;
     try {
-      validatedUrl = new URL(url);
+      const validatedUrl = new URL(url);
       if (!validatedUrl.protocol.startsWith('http')) {
         throw new Error('Invalid URL protocol');
       }
-    } catch (error) {
+    } catch {
+      // Just catch any URL validation errors without using the error object
       return NextResponse.json(
         { message: 'Invalid URL format' },
         { status: 400 }

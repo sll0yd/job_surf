@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { Database } from '@/lib/database.types';
 
 // Define interface for parsed job data
 interface ParsedJobData {
@@ -20,8 +21,9 @@ interface ParsedJobData {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Initialize Supabase client for auth check
-    const supabase = createRouteHandlerClient({ cookies });
+    // Initialize Supabase client for auth check - make sure to await cookies
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore });
     
     // Get the current user session
     const { data: { session } } = await supabase.auth.getSession();
@@ -83,7 +85,7 @@ function simpleJobParser(content: string, url: string): ParsedJobData {
       company = urlObj.hostname.replace('www.', '').split('.')[0];
       // Capitalize the first letter
       company = company.charAt(0).toUpperCase() + company.slice(1);
-    } catch (e) {
+    } catch {
       company = 'Unknown Company';
     }
   }
@@ -138,14 +140,14 @@ function simpleJobParser(content: string, url: string): ParsedJobData {
     description = paragraphs[0].trim();
   }
   
-  // Find requirements section
-  const requirementsMatch = plainText.match(/requirements:?(.*?)(?:responsibilities|qualifications|about you|what you'll do|what you will do|about the role|expected|we offer)/is);
+  // Find requirements section - using [\s\S] instead of the 's' flag for compatibility
+  const requirementsMatch = plainText.match(/requirements:?([\s\S]*?)(?:responsibilities|qualifications|about you|what you'll do|what you will do|about the role|expected|we offer)/i);
   const requirements = requirementsMatch ? 
     extractBulletPoints(requirementsMatch[1]) : 
     [];
   
-  // Find qualifications section
-  const qualificationsMatch = plainText.match(/qualifications:?(.*?)(?:requirements|responsibilities|about you|what you'll do|what you will do|about the role|expected|we offer)/is);
+  // Find qualifications section - using [\s\S] instead of the 's' flag for compatibility
+  const qualificationsMatch = plainText.match(/qualifications:?([\s\S]*?)(?:requirements|responsibilities|about you|what you'll do|what you will do|about the role|expected|we offer)/i);
   const qualifications = qualificationsMatch ? 
     extractBulletPoints(qualificationsMatch[1]) : 
     [];
