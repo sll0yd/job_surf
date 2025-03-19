@@ -5,15 +5,20 @@ import { supabase } from './supabase';
 import { User, Session } from '@supabase/supabase-js';
 
 // Define types for our auth context
+interface AuthError {
+  message: string;
+  status?: number;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
-  forgotPassword: (email: string) => Promise<{ error: any }>;
-  resetPassword: (password: string) => Promise<{ error: any }>;
+  forgotPassword: (email: string) => Promise<{ error: AuthError | null }>;
+  resetPassword: (password: string) => Promise<{ error: AuthError | null }>;
 }
 
 // Create the auth context with default values
@@ -48,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
-        console.error('Error getting session:', error);
+        console.error('Error getting session:', error.message);
       }
 
       if (session) {
@@ -86,7 +91,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setIsLoading(false);
-    return { error };
+    return { 
+      error: error ? { message: error.message, status: error.status } : null 
+    };
   };
 
   // Sign up function
@@ -100,7 +107,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     });
     setIsLoading(false);
-    return { error };
+    return { 
+      error: error ? { message: error.message, status: error.status } : null 
+    };
   };
 
   // Sign out function
@@ -115,7 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     setIsLoading(false);
-    return { error };
+    return { 
+      error: error ? { message: error.message, status: error.status } : null 
+    };
   };
 
   // Reset password function
@@ -123,7 +134,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
     setIsLoading(false);
-    return { error };
+    return { 
+      error: error ? { message: error.message, status: error.status } : null 
+    };
   };
 
   // Create context value object
