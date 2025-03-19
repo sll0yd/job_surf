@@ -44,6 +44,7 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
   const [errors, setErrors] = useState<Partial<Record<keyof JobFormData, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showUrlImport, setShowUrlImport] = useState(false);
+  const [isImportMode, setIsImportMode] = useState(false);
   const router = useRouter();
 
   // Handle input changes
@@ -66,9 +67,46 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
     }
   };
 
+  // Handle URL change with option to extract data
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const url = e.target.value;
+    setFormData(prev => ({
+      ...prev,
+      url
+    }));
+    
+    // Clear URL error if exists
+    if (errors.url) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.url;
+        return newErrors;
+      });
+    }
+  };
+
+  // Handle URL import button click
+  const handleExtractFromUrl = () => {
+    if (!formData.url) {
+      setErrors(prev => ({
+        ...prev,
+        url: 'Please enter a URL first'
+      }));
+      return;
+    }
+    
+    setIsImportMode(true);
+    setShowUrlImport(true);
+  };
+
   // Validate form
   const validateForm = () => {
     const newErrors: Partial<Record<keyof JobFormData, string>> = {};
+    
+    // Skip validation if in import mode
+    if (isImportMode) {
+      return true;
+    }
     
     if (!formData.company.trim()) {
       newErrors.company = 'Company name is required';
@@ -79,7 +117,7 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
     }
     
     if (formData.status === 'applied' && !formData.applied_date) {
-      newErrors.applied_date = 'Applied date is required when status is "Applied"';
+      newErrors.applied_date = 'Applied date is required when status is &quot;Applied&quot;';
     }
     
     setErrors(newErrors);
@@ -114,19 +152,21 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
   
   // Handle job data from URL import
   const handleJobExtracted = (jobData: JobFormData) => {
-    setFormData(prev => ({
-      ...prev,
-      ...jobData
-    }));
+    setFormData(jobData);
     setShowUrlImport(false);
+    setIsImportMode(false);
   };
 
   return (
     <>
       {showUrlImport ? (
         <JobUrlImport 
+          url={formData.url}
           onJobExtracted={handleJobExtracted} 
-          onCancel={() => setShowUrlImport(false)} 
+          onCancel={() => {
+            setShowUrlImport(false);
+            setIsImportMode(false);
+          }} 
         />
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -135,22 +175,45 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
               <h2 className="text-xl font-medium text-gray-900">
                 {isEditing ? 'Edit Job Application' : 'Add New Job Application'}
               </h2>
-              
-              {!isEditing && (
-                <button
-                  type="button"
-                  onClick={() => setShowUrlImport(true)}
-                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  <svg className="-ml-0.5 mr-2 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
-                  Import from URL
-                </button>
-              )}
             </div>
             
             <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+              {/* URL Field - Moved to the top */}
+              <div className="sm:col-span-2">
+                <label htmlFor="url" className="block text-sm font-medium text-gray-700">
+                  Job URL
+                </label>
+                <div className="mt-1 flex">
+                  <input
+                    type="url"
+                    name="url"
+                    id="url"
+                    value={formData.url}
+                    onChange={handleUrlChange}
+                    className={`shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md ${
+                      errors.url ? 'border-red-300' : ''
+                    }`}
+                    placeholder="https://example.com/job-posting"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleExtractFromUrl}
+                    className="ml-3 inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    <svg className="-ml-0.5 mr-2 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Extract Data
+                  </button>
+                </div>
+                {errors.url && (
+                  <p className="mt-1 text-sm text-red-600">{errors.url}</p>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  Paste a job posting URL and click &quot;Extract Data&quot; to automatically fill the form
+                </p>
+              </div>
+              
               {/* Company */}
               <div className="sm:col-span-2">
                 <label htmlFor="company" className="block text-sm font-medium text-gray-700">
@@ -229,24 +292,6 @@ export default function JobForm({ initialData, isEditing = false }: JobFormProps
                     onChange={handleChange}
                     className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                     placeholder="Expected or offered salary"
-                  />
-                </div>
-              </div>
-              
-              {/* URL */}
-              <div className="sm:col-span-2">
-                <label htmlFor="url" className="block text-sm font-medium text-gray-700">
-                  Job URL
-                </label>
-                <div className="mt-1">
-                  <input
-                    type="url"
-                    name="url"
-                    id="url"
-                    value={formData.url}
-                    onChange={handleChange}
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    placeholder="https://example.com/job-posting"
                   />
                 </div>
               </div>
