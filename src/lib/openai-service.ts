@@ -1,3 +1,4 @@
+// src/lib/openai-service.ts
 import { JobFormData } from './types';
 
 // Define the shape of data we expect from parsing a job URL
@@ -12,11 +13,11 @@ export interface ParsedJobData {
 }
 
 /**
- * Service for interacting with OpenAI API
+ * Service for interacting with the AI-powered job analysis API
  */
-export const openAIService = {
+export const aiJobService = {
   /**
-   * Extract job details from a URL using OpenAI
+   * Extract job details from a URL using AI
    */
   async extractJobFromUrl(url: string): Promise<JobFormData> {
     try {
@@ -30,13 +31,13 @@ export const openAIService = {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to scrape URL');
+        const errorData = await response.json() as { message: string };
+        throw new Error(errorData.message || 'Failed to scrape URL');
       }
 
-      const { content } = await response.json();
+      const { content } = await response.json() as { content: string };
 
-      // Then, use OpenAI to extract structured job data
+      // Then, use AI to extract structured job data
       const aiResponse = await fetch('/api/analyze-job', {
         method: 'POST',
         headers: {
@@ -46,15 +47,14 @@ export const openAIService = {
       });
 
       if (!aiResponse.ok) {
-        const error = await aiResponse.json();
-        throw new Error(error.message || 'Failed to analyze job content');
+        const errorData = await aiResponse.json() as { message: string };
+        throw new Error(errorData.message || 'Failed to analyze job content');
       }
 
-      const parsedData = await aiResponse.json();
+      const parsedData = await aiResponse.json() as ParsedJobData;
 
       // Convert the parsed data to match our JobFormData format
-      // Make sure all the required fields are filled with at least empty strings to match the type
-      return {
+      const jobData: JobFormData = {
         company: parsedData.company || '',
         position: parsedData.position || '',
         location: parsedData.location || '',
@@ -65,10 +65,25 @@ export const openAIService = {
         contact_name: '',
         contact_email: '',
         contact_phone: '',
-        notes: parsedData.requirements ? 
-          `Requirements:\n${parsedData.requirements.join('\n')}\n\nQualifications:\n${parsedData.qualifications?.join('\n') || ''}` : '',
-        applied_date: '',
+        notes: '',
       };
+
+      // If requirements or qualifications were extracted, add them to notes
+      if (parsedData.requirements?.length || parsedData.qualifications?.length) {
+        let notes = '';
+        
+        if (parsedData.requirements?.length) {
+          notes += "Requirements:\n" + parsedData.requirements.map(req => `• ${req}`).join('\n') + '\n\n';
+        }
+        
+        if (parsedData.qualifications?.length) {
+          notes += "Qualifications:\n" + parsedData.qualifications.map(qual => `• ${qual}`).join('\n');
+        }
+        
+        jobData.notes = notes;
+      }
+
+      return jobData;
     } catch (error) {
       console.error('Error extracting job from URL:', error);
       throw error;

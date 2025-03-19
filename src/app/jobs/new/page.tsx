@@ -1,3 +1,4 @@
+// src/app/jobs/new/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,26 +8,30 @@ import Navbar from '@/components/NavBar';
 import { jobsService } from '@/lib/api-service';
 import { JobFormData, JobStatus } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import JobUrlExtractor from '@/components/JobUrlExtractor';
+import { aiJobService } from '@/lib/openai-service';
+
+// Initial form state
+const initialFormData: JobFormData = {
+  company: '',
+  position: '',
+  location: '',
+  url: '',
+  description: '',
+  salary: '',
+  contact_name: '',
+  contact_email: '',
+  contact_phone: '',
+  notes: '',
+  status: 'saved' as JobStatus,
+};
 
 export default function NewJobPage() {
   const router = useRouter();
+  const [formData, setFormData] = useState<JobFormData>(initialFormData);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // Form state
-  const [formData, setFormData] = useState<JobFormData>({
-    company: '',
-    position: '',
-    location: '',
-    url: '',
-    description: '',
-    salary: '',
-    contact_name: '',
-    contact_email: '',
-    contact_phone: '',
-    notes: '',
-    status: 'saved' as JobStatus,
-  });
+  const [extractionError, setExtractionError] = useState<string | null>(null);
   
   // Form validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,6 +70,44 @@ export default function NewJobPage() {
     }
   };
 
+  // Handle job data extraction from URL
+  const handleJobExtracted = (jobData: JobFormData) => {
+    setFormData({
+      ...formData,
+      ...jobData,
+    });
+    setExtractionError(null);
+  };
+
+  // Handle extraction errors
+  const handleExtractionError = (error: string) => {
+    setExtractionError(error);
+  };
+
+  // Handle status change with date updates
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value as JobStatus;
+    const updates: Partial<JobFormData> = { status: newStatus };
+    
+    // Set appropriate date field if status is changed and date isn't already set
+    const today = new Date().toISOString().substring(0, 10); // YYYY-MM-DD format
+    
+    if (newStatus === 'applied' && !formData.applied_date) {
+      updates.applied_date = today;
+    } else if (newStatus === 'interview' && !formData.interview_date) {
+      updates.interview_date = today;
+    } else if (newStatus === 'offer' && !formData.offer_date) {
+      updates.offer_date = today;
+    } else if (newStatus === 'rejected' && !formData.rejected_date) {
+      updates.rejected_date = today;
+    }
+    
+    setFormData(prev => ({
+      ...prev,
+      ...updates
+    }));
+  };
+
   // Form validation
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -78,23 +121,39 @@ export default function NewJobPage() {
       newErrors.position = 'Position is required';
     }
     
-    // URL validation if provided
-    if (formData.url && !formData.url.match(/^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/)) {
-      newErrors.url = 'Please enter a valid URL';
-    }
-    
-    // Email validation if provided
-    if (formData.contact_email && !formData.contact_email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-      newErrors.contact_email = 'Please enter a valid email address';
-    }
-    
     // If status is applied, make sure we have an applied date
     if (formData.status === 'applied' && !formData.applied_date) {
       newErrors.applied_date = 'Please provide an applied date';
     }
     
+    // URL validation if provided
+    if (formData.url && !isValidUrl(formData.url)) {
+      newErrors.url = 'Please enter a valid URL';
+    }
+    
+    // Email validation if provided
+    if (formData.contact_email && !isValidEmail(formData.contact_email)) {
+      newErrors.contact_email = 'Please enter a valid email address';
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Validate URL
+  const isValidUrl = (url: string): boolean => {
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Validate email
+  const isValidEmail = (email: string): boolean => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
   };
 
   // Handle form submission
@@ -120,30 +179,6 @@ export default function NewJobPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Handle status change with date updates
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newStatus = e.target.value as JobStatus;
-    const updates: Partial<JobFormData> = { status: newStatus };
-    
-    // Set appropriate date field if status is changed and date isn't already set
-    const today = new Date().toISOString().substring(0, 10); // YYYY-MM-DD format
-    
-    if (newStatus === 'applied' && !formData.applied_date) {
-      updates.applied_date = today;
-    } else if (newStatus === 'interview' && !formData.interview_date) {
-      updates.interview_date = today;
-    } else if (newStatus === 'offer' && !formData.offer_date) {
-      updates.offer_date = today;
-    } else if (newStatus === 'rejected' && !formData.rejected_date) {
-      updates.rejected_date = today;
-    }
-    
-    setFormData(prev => ({
-      ...prev,
-      ...updates
-    }));
   };
 
   return (
@@ -177,7 +212,7 @@ export default function NewJobPage() {
             Add New Job
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Enter the details of your job application below.
+            Enter the details of your job application below or paste a job URL to extract details automatically.
           </p>
         </div>
         
@@ -201,8 +236,49 @@ export default function NewJobPage() {
           </div>
         )}
         
+        {extractionError && (
+          <div className="rounded-md bg-red-50 p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">
+                  Extraction Error
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{extractionError}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit}>
           <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+            {/* Quick URL Import Section */}
+            <div className="px-4 py-5 sm:p-6 border-b border-gray-200">
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Quick Import</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Paste a job posting URL to automatically extract details.
+              </p>
+              <div className="mt-4">
+                <label htmlFor="job-url" className="block text-sm font-medium text-gray-700">
+                  Job URL
+                </label>
+                <div className="mt-1">
+                  <JobUrlExtractor
+                    onJobExtracted={handleJobExtracted}
+                    onError={handleExtractionError}
+                    isLoading={isLoading}
+                    setIsLoading={setIsLoading}
+                  />
+                </div>
+              </div>
+            </div>
+            
             {/* Basic Information */}
             <div className="px-4 py-5 sm:p-6 border-b border-gray-200">
               <h3 className="text-lg font-medium leading-6 text-gray-900">Basic Information</h3>
@@ -270,25 +346,8 @@ export default function NewJobPage() {
                   </div>
                 </div>
 
-                {/* Salary */}
-                <div className="sm:col-span-3">
-                  <label htmlFor="salary" className="block text-sm font-medium text-gray-700">
-                    Salary (Expected/Offered)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="salary"
-                      id="salary"
-                      value={formData.salary}
-                      onChange={handleChange}
-                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    />
-                  </div>
-                </div>
-
                 {/* URL */}
-                <div className="sm:col-span-6">
+                <div className="sm:col-span-3">
                   <label htmlFor="url" className="block text-sm font-medium text-gray-700">
                     Job URL
                   </label>
@@ -310,6 +369,23 @@ export default function NewJobPage() {
                   </div>
                 </div>
 
+                {/* Salary */}
+                <div className="sm:col-span-3">
+                  <label htmlFor="salary" className="block text-sm font-medium text-gray-700">
+                    Salary
+                  </label>
+                  <div className="mt-1">
+                    <input
+                      type="text"
+                      name="salary"
+                      id="salary"
+                      value={formData.salary}
+                      onChange={handleChange}
+                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                    />
+                  </div>
+                </div>
+
                 {/* Description */}
                 <div className="sm:col-span-6">
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700">
@@ -322,7 +398,8 @@ export default function NewJobPage() {
                       rows={4}
                       value={formData.description}
                       onChange={handleChange}
-                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border border-gray-300 rounded-md"
+                      className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      placeholder="Brief description of the job"
                     />
                   </div>
                 </div>
@@ -493,7 +570,7 @@ export default function NewJobPage() {
             </div>
 
             {/* Notes */}
-            <div className="px-4 py-5 sm:p-6 border-b border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg font-medium leading-6 text-gray-900">Notes</h3>
               <div className="mt-6">
                 <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
@@ -506,7 +583,7 @@ export default function NewJobPage() {
                     rows={4}
                     value={formData.notes}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border border-gray-300 rounded-md"
+                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                     placeholder="Add any notes about this job application..."
                   />
                 </div>
@@ -519,6 +596,7 @@ export default function NewJobPage() {
                 type="button"
                 onClick={() => router.back()}
                 className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
+                disabled={isLoading}
               >
                 Cancel
               </button>

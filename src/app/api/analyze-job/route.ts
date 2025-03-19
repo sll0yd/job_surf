@@ -1,7 +1,9 @@
+// src/app/api/analyze-job/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import OpenAI from 'openai';
+import { ParsedJobData } from '@/lib/openai-service';
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -9,7 +11,7 @@ const openai = new OpenAI({
 });
 
 /**
- * Analyze job posting content using OpenAI
+ * API route that analyzes job posting content using AI
  */
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Parse request body
-    const { content, url } = await request.json();
+    const { content, url } = await request.json() as { content: string; url: string };
     
     if (!content) {
       return NextResponse.json(
@@ -67,7 +69,7 @@ export async function POST(request: NextRequest) {
     
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo", // or gpt-4 for better accuracy
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: `Job URL: ${url}\n\nHTML Content: ${content.substring(0, 15000)}` }
@@ -77,10 +79,10 @@ export async function POST(request: NextRequest) {
     
     // Parse the response
     const responseText = completion.choices[0].message.content;
-    let parsedData;
+    let parsedData: ParsedJobData;
     
     try {
-      parsedData = JSON.parse(responseText || '{}');
+      parsedData = JSON.parse(responseText || '{}') as ParsedJobData;
     } catch (err) {
       console.error('Error parsing OpenAI response:', err);
       return NextResponse.json(
@@ -92,8 +94,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(parsedData);
   } catch (error) {
     console.error('Error in POST /api/analyze-job:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to analyze job content';
     return NextResponse.json(
-      { message: 'Failed to analyze job. Please try again.' },
+      { message: errorMessage },
       { status: 500 }
     );
   }

@@ -1,7 +1,8 @@
+// src/components/JobUrlImport.tsx
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { openAIService } from '@/lib/openai-service';
+import { aiJobService } from '@/lib/openai-service';
 // Import the correct JobFormData type from your project
 import { JobFormData as ProjectJobFormData } from '@/lib/types';
 
@@ -39,10 +40,10 @@ export default function JobUrlImport({ url = '', onJobExtracted, onCancel }: Job
     setError(null);
     
     try {
-      const jobData = await openAIService.extractJobFromUrl(urlToExtract);
+      const jobData = await aiJobService.extractJobFromUrl(urlToExtract);
       // Convert to the expected type if needed
       onJobExtracted(jobData as unknown as ProjectJobFormData);
-    } catch (err: unknown) {
+    } catch (err) {
       console.error('Error extracting job:', err);
       // Handle the error in a type-safe way
       const errorMessage = err instanceof Error ? err.message : 'Failed to extract job details';

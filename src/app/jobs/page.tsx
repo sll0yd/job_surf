@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/NavBar';
-import JobList from '@/components/JobList';
+// Remove unused JobList import
 import JobFilter from '@/components/JobFilter';
 import { jobsService } from '@/lib/api-service';
 import { JobData } from '@/lib/types';
@@ -45,9 +45,11 @@ export default function JobsPage() {
         const data = await jobsService.getJobs();
         setJobs(data);
         setFilteredJobs(data);
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error loading jobs:', err);
-        setError(err.message || 'Failed to load jobs');
+        // Fixed 'any' type with type checking
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load jobs';
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }
@@ -73,9 +75,11 @@ export default function JobsPage() {
           // Otherwise, just show all jobs
           setFilteredJobs(jobs);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error applying filters:', err);
-        setError(err.message || 'Failed to filter jobs');
+        // Fixed 'any' type with type checking
+        const errorMessage = err instanceof Error ? err.message : 'Failed to filter jobs';
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }

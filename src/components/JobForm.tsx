@@ -1,4 +1,3 @@
-// src/components/JobForm.tsx
 'use client';
 
 import { useState } from 'react';
