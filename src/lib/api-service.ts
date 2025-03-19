@@ -191,7 +191,7 @@ export const jobsService = {
     }
 
     // Prepare updates object with dates for specific statuses
-    const updates: any = { status };
+    const updates: Record<string, string> = { status };
     
     // Set date fields based on new status
     if (status === 'applied' && !currentJob.applied_date) {

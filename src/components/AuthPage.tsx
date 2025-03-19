@@ -24,8 +24,8 @@ export default function AuthPage() {
     try {
       if (isSignIn) {
         // Sign in logic
-        const { error } = await signIn(email, password);
-        if (error) throw error;
+        const { error: signInError } = await signIn(email, password);
+        if (signInError) throw signInError;
         router.push('/dashboard');
       } else {
         // Sign up logic
@@ -35,8 +35,8 @@ export default function AuthPage() {
           return;
         }
 
-        const { error } = await signUp(email, password, name);
-        if (error) throw error;
+        const { error: signUpError } = await signUp(email, password, name);
+        if (signUpError) throw signUpError;
         
         // Show success message after sign up
         setIsSignIn(true);
@@ -46,8 +46,13 @@ export default function AuthPage() {
         setName('');
         setError('Account created! Please check your email to confirm your account before signing in.');
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+    } catch (err: unknown) {
+      // Type guard to handle different error types
+      if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }

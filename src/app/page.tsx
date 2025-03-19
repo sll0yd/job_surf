@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import AuthPage from '@/components/AuthPage';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 export default function Home() {
   const { user, isLoading } = useAuth();

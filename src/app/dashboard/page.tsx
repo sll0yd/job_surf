@@ -7,8 +7,10 @@ import ActivityFeed from '@/components/ActivityFeed';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth-context';
+import { jobsService } from '@/lib/api-service';
+import { JobStatus } from '@/lib/types';
 
-// Define types for our sample data
+// Define types for our data
 interface StatsData {
   total: number;
   saved: number;
@@ -22,13 +24,14 @@ interface JobData {
   id: string;
   company: string;
   position: string;
-  status: string;
+  status: JobStatus;
   date: string;
 }
 
-interface ActivityData {
+// Define the types based on what ActivityFeed component expects
+interface Activity {
   id: string;
-  type: 'job_created' | 'status_changed' | 'note_added';
+  type: 'job_created' | 'status_changed' | 'note_added' | 'job_updated';
   date: string;
   description: string;
   job?: {
@@ -38,95 +41,91 @@ interface ActivityData {
   };
 }
 
-// Sample data (replace with API calls)
-const SAMPLE_STATS: StatsData = {
-  total: 12,
-  saved: 2,
-  applied: 5,
-  interview: 3,
-  offer: 1,
-  rejected: 1,
-};
-
-const SAMPLE_ACTIVITIES: ActivityData[] = [
-  {
-    id: '1',
-    type: 'job_created',
-    date: new Date().toISOString(),
-    description: 'Added new job:',
-    job: {
-      id: '101',
-      company: 'Tech Solutions Inc.',
-      position: 'Frontend Developer',
-    },
-  },
-  {
-    id: '2',
-    type: 'status_changed',
-    date: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-    description: 'Changed status from Applied to Interview:',
-    job: {
-      id: '102',
-      company: 'Digital Innovations',
-      position: 'UX Designer',
-    },
-  },
-  {
-    id: '3',
-    type: 'note_added',
-    date: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-    description: 'Added note to:',
-    job: {
-      id: '103',
-      company: 'Global Systems',
-      position: 'Project Manager',
-    },
-  },
-];
-
-const SAMPLE_JOBS: JobData[] = [
-  {
-    id: '101',
-    company: 'Tech Solutions Inc.',
-    position: 'Frontend Developer',
-    status: 'applied',
-    date: new Date().toISOString(),
-  },
-  {
-    id: '102',
-    company: 'Digital Innovations',
-    position: 'UX Designer',
-    status: 'interview',
-    date: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: '103',
-    company: 'Global Systems',
-    position: 'Project Manager',
-    status: 'saved',
-    date: new Date(Date.now() - 172800000).toISOString(),
-  },
-];
+// Import ActivityData from your types file but rename it to avoid conflict
+import type { ActivityData as ApiActivityData } from '@/lib/types';
 
 export default function Dashboard() {
-  // In a real app, you would fetch this data from an API
-  const [stats, setStats] = useState<StatsData>(SAMPLE_STATS);
-  const [activities, setActivities] = useState<ActivityData[]>(SAMPLE_ACTIVITIES);
-  const [recentJobs, setRecentJobs] = useState<JobData[]>(SAMPLE_JOBS);
+  // State declarations with initial values
+  const [stats, setStats] = useState<StatsData>({
+    total: 0,
+    saved: 0,
+    applied: 0,
+    interview: 0,
+    offer: 0,
+    rejected: 0
+  });
+  
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [recentJobs, setRecentJobs] = useState<JobData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
-  // Simulate data loading
+  // Fetch data from API on component mount
   useEffect(() => {
-    setIsLoading(true);
-    // In a real app, you would fetch data from an API
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
+    const fetchDashboardData = async () => {
+      setIsLoading(true);
+      
+      try {
+        // Fetch stats data
+        const statsData = await jobsService.getDashboardStats();
+        setStats(statsData);
+        
+        // Fetch activities data - limit to 5 most recent
+        const activitiesData: ApiActivityData[] = await jobsService.getActivities(5);
+        
+        // Convert ApiActivityData to Activity expected by ActivityFeed component
+        const mappedActivities = activitiesData.map(activity => {
+          // Filter out 'job_deleted' type since ActivityFeed doesn't support it
+          if (activity.type === 'job_deleted') {
+            return {
+              ...activity,
+              type: 'job_updated' // Map to a supported type
+            } as Activity;
+          }
+          return activity as Activity;
+        });
+        
+        setActivities(mappedActivities);
+        
+        // Fetch recent jobs - in a real app you would have a dedicated API endpoint
+        const jobsData = await jobsService.getJobs();
+        // Sort by created date and take the 3 most recent
+        const sortedJobs = jobsData
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 3)
+          .map(job => ({
+            id: job.id,
+            company: job.company,
+            position: job.position,
+            status: job.status,
+            date: job.created_at
+          }));
+        
+        setRecentJobs(sortedJobs);
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        // In case of error, use fallback data
+        // This avoids showing empty UI which would be confusing
+        setStats({
+          total: 0,
+          saved: 0,
+          applied: 0,
+          interview: 0,
+          offer: 0,
+          rejected: 0
+        });
+        setActivities([]);
+        setRecentJobs([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
   }, []);
 
-  // Function to get status badge color
-  const getStatusColor = (status: string): string => {
+  // Function to get status badge color - moved outside the JSX for cleaner code
+  const getStatusColor = (status: JobStatus): string => {
     switch (status) {
       case 'saved':
         return 'bg-gray-100 text-gray-800';
@@ -149,6 +148,11 @@ export default function Dashboard() {
     return date.toLocaleDateString();
   };
 
+  // Function to capitalize status
+  const capitalizeStatus = (status: JobStatus): string => {
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
@@ -157,9 +161,11 @@ export default function Dashboard() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="md:flex md:items-center md:justify-between mb-8">
             <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Welcome, {user?.user_metadata?.name || 'Surfer'}</h1>
+              <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                Welcome, {user?.user_metadata?.name || 'Surfer'}
+              </h1>
               <p className="mt-1 text-sm text-gray-500">
-                Here's an overview of your job applications
+                Here&apos;s an overview of your job applications
               </p>
             </div>
             <div className="mt-4 flex md:mt-0 md:ml-4">
@@ -197,37 +203,128 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Activity Feed */}
                 <div className="lg:col-span-2">
-                  <ActivityFeed activities={activities} />
+                  {activities.length > 0 ? (
+                    <ActivityFeed activities={activities} />
+                  ) : (
+                    <div className="bg-white shadow-sm rounded-lg p-6">
+                      <h2 className="text-lg font-medium text-gray-900 mb-4">Recent Activity</h2>
+                      <div className="text-center py-10">
+                        <svg 
+                          className="mx-auto h-12 w-12 text-gray-400" 
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor" 
+                          aria-hidden="true"
+                        >
+                          <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" 
+                          />
+                        </svg>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No recent activity</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          Start by adding your first job application to track your progress.
+                        </p>
+                        <div className="mt-6">
+                          <Link 
+                            href="/jobs/new"
+                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                          >
+                            <svg 
+                              className="-ml-1 mr-2 h-5 w-5" 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              viewBox="0 0 20 20" 
+                              fill="currentColor" 
+                              aria-hidden="true"
+                            >
+                              <path 
+                                fillRule="evenodd" 
+                                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" 
+                                clipRule="evenodd" 
+                              />
+                            </svg>
+                            Add a job
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Recent Jobs */}
                 <div className="lg:col-span-1">
                   <div className="bg-white shadow-sm rounded-lg p-6">
                     <h2 className="text-lg font-medium text-gray-900 mb-4">Recent Jobs</h2>
-                    <div className="space-y-4">
-                      {recentJobs.map((job) => (
-                        <div key={job.id} className="border-b border-gray-200 pb-4 last:border-0 last:pb-0">
-                          <div className="flex justify-between items-start">
-                            <h3 className="text-sm font-medium text-gray-900">{job.company}</h3>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(job.status)}`}>
-                              {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-                            </span>
+                    {recentJobs.length > 0 ? (
+                      <div className="space-y-4">
+                        {recentJobs.map((job) => (
+                          <div key={job.id} className="border-b border-gray-200 pb-4 last:border-0 last:pb-0">
+                            <div className="flex justify-between items-start">
+                              <h3 className="text-sm font-medium text-gray-900">{job.company}</h3>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(job.status)}`}>
+                                {capitalizeStatus(job.status)}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-500 mt-1">{job.position}</p>
+                            <p className="text-xs text-gray-400 mt-1">Added on {formatDate(job.date)}</p>
+                            <div className="mt-2">
+                              <Link href={`/jobs/${job.id}`} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
+                                View details &rarr;
+                              </Link>
+                            </div>
                           </div>
-                          <p className="text-sm text-gray-500 mt-1">{job.position}</p>
-                          <p className="text-xs text-gray-400 mt-1">Added on {formatDate(job.date)}</p>
-                          <div className="mt-2">
-                            <Link href={`/jobs/${job.id}`} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
-                              View details &rarr;
-                            </Link>
-                          </div>
+                        ))}
+                        <div className="mt-6 text-center">
+                          <Link href="/jobs" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                            View all jobs
+                          </Link>
                         </div>
-                      ))}
-                    </div>
-                    <div className="mt-6 text-center">
-                      <Link href="/jobs" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-                        View all jobs
-                      </Link>
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-10">
+                        <svg 
+                          className="mx-auto h-12 w-12 text-gray-400" 
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor" 
+                          aria-hidden="true"
+                        >
+                          <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" 
+                          />
+                        </svg>
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No jobs yet</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          Get started by adding your first job application.
+                        </p>
+                        <div className="mt-6">
+                          <Link 
+                            href="/jobs/new"
+                            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                          >
+                            <svg 
+                              className="-ml-1 mr-2 h-5 w-5" 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              viewBox="0 0 20 20" 
+                              fill="currentColor" 
+                              aria-hidden="true"
+                            >
+                              <path 
+                                fillRule="evenodd" 
+                                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" 
+                                clipRule="evenodd" 
+                              />
+                            </svg>
+                            Add a job
+                          </Link>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -9,11 +9,17 @@ import { useAuth } from '@/lib/auth-context';
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
 
   // Check if a link is active
   const isActive = (path: string) => {
     return pathname === path || pathname?.startsWith(`${path}/`);
+  };
+
+  // Handle sign out button click
+  const handleSignOut = () => {
+    setIsMenuOpen(false);
+    signOut();
   };
 
   return (
@@ -78,7 +84,7 @@ export default function Navbar() {
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               type="button"
-                              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
               aria-expanded="false"
             >
               <span className="sr-only">Open main menu</span>
@@ -198,12 +204,7 @@ export default function Navbar() {
                   </Link>
                   <button 
                     className="block w-full text-left px-4 py-2 text-base font-medium text-red-500 hover:text-red-800 hover:bg-gray-100"
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      // Use the signOut function from useAuth here
-                      const { signOut } = useAuth();
-                      signOut();
-                    }}
+                    onClick={handleSignOut}
                   >
                     Sign out
                   </button>
