@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-//import { Database } from '@/lib/database.types';
-//import { Database } from '../lib/database.types';
 import { Database } from '@/lib/database.types';
 
-
-/*
+/**
  * POST /api/jobs/[id]/notes - Add a note to a job
  */
 export async function POST(
