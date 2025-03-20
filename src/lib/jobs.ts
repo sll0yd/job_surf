@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { 
+// Use 'type' keyword for type-only imports
+import type { 
   Job, 
   JobStatus, 
   JobFormData, 
@@ -8,38 +9,6 @@ import {
   DashboardStats,
   ActivityData 
 } from './types';
-
-// Explicit type usage to prevent unused import warnings
-function _unusedTypeCheck() {
-  const _status: JobStatus = 'saved';
-  const _formData: JobFormData = {
-    company: '',
-    position: '',
-    location: '',
-    url: '',
-    description: '',
-    salary: '',
-    contact_name: '',
-    contact_email: '',
-    contact_phone: '',
-    notes: '',
-    status: 'saved'
-  };
-  const _updateData: UpdateJobData = {
-    status: 'applied'
-  };
-  const _dashboardStats: DashboardStats = {
-    total: 0,
-    saved: 0,
-    applied: 0,
-    interview: 0,
-    offer: 0,
-    rejected: 0,
-    applicationRate: 0,
-    responseRate: 0,
-    interviewRate: 0
-  };
-}
 
 /**
  * Jobs Service - Contains all functions for interacting with jobs data
