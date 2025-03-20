@@ -55,7 +55,7 @@ export async function PUT(
     }
     
     // Prepare updates including date fields
-    const updates: any = { status };
+    const updates: Record<string, string> = { status };
     
     // Set date field based on status
     if (status === 'applied' && !job.applied_date) {

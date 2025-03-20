@@ -3,11 +3,36 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { Database } from '@/lib/database.types';
 
+// Helper to check if user has access to job
+async function checkJobAccess(
+  supabase: ReturnType<typeof createRouteHandlerClient<Database>>, 
+  jobId: string, 
+  userId: string
+) {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id')
+    .eq('id', jobId)
+    .eq('user_id', userId)
+    .single();
+  
+  if (error || !data) {
+    return false;
+  }
+  
+  return true;
+}
+
 /**
- * GET /api/jobs - Get all jobs for current user
+ * GET /api/jobs/[id] - Get a specific job by ID
  */
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
+    const jobId = params.id;
+    
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
     
@@ -22,46 +47,34 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status');
-    const search = searchParams.get('search');
-    const sortBy = searchParams.get('sortBy') || 'updated_at';
-    const sortDirection = searchParams.get('sortDirection') || 'desc';
+    // Check if job exists and belongs to user
+    const hasAccess = await checkJobAccess(supabase, jobId, session.user.id);
     
-    // Start building the query
-    let query = supabase
+    if (!hasAccess) {
+      return NextResponse.json(
+        { message: 'Job not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Get the job
+    const { data, error } = await supabase
       .from('jobs')
       .select('*')
-      .eq('user_id', session.user.id);
-    
-    // Apply filters if provided
-    if (status) {
-      query = query.eq('status', status);
-    }
-    
-    if (search) {
-      const searchTerm = `%${search}%`;
-      query = query.or(`company.ilike.${searchTerm},position.ilike.${searchTerm}`);
-    }
-    
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortDirection === 'asc' });
-    
-    // Execute query
-    const { data, error } = await query;
+      .eq('id', jobId)
+      .single();
     
     if (error) {
-      console.error('Error fetching jobs:', error);
+      console.error('Error fetching job:', error);
       return NextResponse.json(
-        { message: 'Failed to fetch jobs' },
+        { message: 'Failed to fetch job' },
         { status: 500 }
       );
     }
     
     return NextResponse.json(data);
   } catch (error) {
-    console.error('Error in GET /api/jobs:', error);
+    console.error(`Error in GET /api/jobs/[id]:`, error);
     return NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }
@@ -70,10 +83,15 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/jobs - Create a new job
+ * PUT /api/jobs/[id] - Update a job
  */
-export async function POST(request: NextRequest) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
+    const jobId = params.id;
+    
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
     
@@ -88,34 +106,35 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Parse the request body
-    const jobData = await request.json();
+    // Check if job exists and belongs to user
+    const hasAccess = await checkJobAccess(supabase, jobId, session.user.id);
     
-    // Validate required fields
-    if (!jobData.company || !jobData.position) {
+    if (!hasAccess) {
       return NextResponse.json(
-        { message: 'Company and position are required' },
-        { status: 400 }
+        { message: 'Job not found' },
+        { status: 404 }
       );
     }
     
-    // Set the user ID
-    const newJob = {
-      ...jobData,
-      user_id: session.user.id,
-    };
+    // Parse the request body
+    const updates = await request.json();
     
-    // Insert the job
+    // Don't allow updating user_id
+    delete updates.user_id;
+    delete updates.id;
+    
+    // Update the job
     const { data, error } = await supabase
       .from('jobs')
-      .insert(newJob)
+      .update(updates)
+      .eq('id', jobId)
       .select()
       .single();
     
     if (error) {
-      console.error('Error creating job:', error);
+      console.error('Error updating job:', error);
       return NextResponse.json(
-        { message: 'Failed to create job' },
+        { message: 'Failed to update job' },
         { status: 500 }
       );
     }
@@ -125,14 +144,75 @@ export async function POST(request: NextRequest) {
       .from('activities')
       .insert({
         user_id: session.user.id,
-        job_id: data.id,
-        activity_type: 'job_created',
-        description: `Created ${data.position} position at ${data.company}`
+        job_id: jobId,
+        activity_type: 'job_updated',
+        description: `Updated ${data.position} at ${data.company}`
       });
     
-    return NextResponse.json(data, { status: 201 });
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('Error in POST /api/jobs:', error);
+    console.error(`Error in PUT /api/jobs/[id]:`, error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/jobs/[id] - Delete a job
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const jobId = params.id;
+    
+    // Initialize Supabase client
+    const supabase = createRouteHandlerClient<Database>({ cookies });
+    
+    // Get the current user session
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // Check if user is authenticated
+    if (!session) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
+    // Check if job exists and belongs to user
+    const hasAccess = await checkJobAccess(supabase, jobId, session.user.id);
+    
+    if (!hasAccess) {
+      return NextResponse.json(
+        { message: 'Job not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Delete the job
+    const { error } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', jobId);
+    
+    if (error) {
+      console.error('Error deleting job:', error);
+      return NextResponse.json(
+        { message: 'Failed to delete job' },
+        { status: 500 }
+      );
+    }
+    
+    return NextResponse.json(
+      { message: 'Job deleted successfully' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error(`Error in DELETE /api/jobs/[id]:`, error);
     return NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }
