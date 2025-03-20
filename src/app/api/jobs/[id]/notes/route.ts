@@ -1,30 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-
-// Define a simplified version of the Database type inline
-interface SimplifiedDatabase {
-  public: {
-    Tables: {
-      jobs: {
-        Row: {
-          id: string;
-          user_id: string;
-          company: string;
-          position: string;
-          notes: string | null;
-          [key: string]: any; // Allow any other fields
-        }
-      }
-      activities: {
-        Row: {
-          id: string;
-          [key: string]: any; // Allow any other fields
-        }
-      }
-    }
-  }
-}
+import { Database } from '@/lib/database.types';
 
 /**
  * POST /api/jobs/[id]/notes - Add a note to a job
@@ -36,8 +13,8 @@ export async function POST(
   try {
     const jobId = params.id;
     
-    // Initialize Supabase client with inline type
-    const supabase = createRouteHandlerClient<SimplifiedDatabase>({ cookies });
+    // Initialize Supabase client
+    const supabase = createRouteHandlerClient<Database>({ cookies });
     
     // Get the current user session
     const { data: { session } } = await supabase.auth.getSession();

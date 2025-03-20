@@ -4,15 +4,10 @@ import { cookies } from 'next/headers';
 import { Database } from '@/lib/database.types';
 
 /**
- * PUT /api/jobs/[id]/status - Update a job's status
+ * GET /api/jobs - Get all jobs for the current user
  */
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest) {
   try {
-    const jobId = params.id;
-    
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
     
@@ -27,59 +22,95 @@ export async function PUT(
       );
     }
     
-    // Check if job exists and belongs to user
-    const { data: job, error: jobError } = await supabase
+    // Build query
+    let query = supabase
       .from('jobs')
       .select('*')
-      .eq('id', jobId)
-      .eq('user_id', session.user.id)
-      .single();
+      .eq('user_id', session.user.id);
     
-    if (jobError || !job) {
+    // Apply status filter if provided
+    const status = request.nextUrl.searchParams.get('status');
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+    
+    // Apply search filter if provided
+    const search = request.nextUrl.searchParams.get('search');
+    if (search) {
+      const searchTerms = search.toLowerCase();
+      query = query.or(`company.ilike.%${searchTerms}%,position.ilike.%${searchTerms}%,location.ilike.%${searchTerms}%`);
+    }
+    
+    // Apply sorting if provided
+    const sortBy = request.nextUrl.searchParams.get('sortBy') || 'updated_at';
+    const sortDirection = request.nextUrl.searchParams.get('sortDirection') || 'desc';
+    query = query.order(sortBy, { ascending: sortDirection === 'asc' });
+    
+    // Execute query
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('Error fetching jobs:', error);
       return NextResponse.json(
-        { message: 'Job not found' },
-        { status: 404 }
+        { message: 'Failed to fetch jobs' },
+        { status: 500 }
+      );
+    }
+    
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in GET /api/jobs:', error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/jobs - Create a new job
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Initialize Supabase client
+    const supabase = createRouteHandlerClient<Database>({ cookies });
+    
+    // Get the current user session
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // Check if user is authenticated
+    if (!session) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
       );
     }
     
     // Parse the request body
-    const { status } = await request.json();
+    const jobData = await request.json();
     
-    // Validate status
-    const validStatuses = ['saved', 'applied', 'interview', 'offer', 'rejected'];
-    if (!status || !validStatuses.includes(status)) {
+    // Validate required fields
+    if (!jobData.company || !jobData.position) {
       return NextResponse.json(
-        { message: 'Invalid status' },
+        { message: 'Company and position are required' },
         { status: 400 }
       );
     }
     
-    // Prepare updates including date fields
-    const updates: Record<string, string> = { status };
+    // Add user_id to the job data
+    jobData.user_id = session.user.id;
     
-    // Set date field based on status
-    if (status === 'applied' && !job.applied_date) {
-      updates.applied_date = new Date().toISOString();
-    } else if (status === 'interview' && !job.interview_date) {
-      updates.interview_date = new Date().toISOString();
-    } else if (status === 'offer' && !job.offer_date) {
-      updates.offer_date = new Date().toISOString();
-    } else if (status === 'rejected' && !job.rejected_date) {
-      updates.rejected_date = new Date().toISOString();
-    }
-    
-    // Update the job
+    // Insert the job
     const { data, error } = await supabase
       .from('jobs')
-      .update(updates)
-      .eq('id', jobId)
+      .insert(jobData)
       .select()
       .single();
     
     if (error) {
-      console.error('Error updating job status:', error);
+      console.error('Error creating job:', error);
       return NextResponse.json(
-        { message: 'Failed to update job status' },
+        { message: 'Failed to create job' },
         { status: 500 }
       );
     }
@@ -89,14 +120,14 @@ export async function PUT(
       .from('activities')
       .insert({
         user_id: session.user.id,
-        job_id: jobId,
-        activity_type: 'status_changed',
-        description: `Changed status from ${job.status} to ${status}`
+        job_id: data.id,
+        activity_type: 'job_created',
+        description: `Created ${data.position} at ${data.company}`
       });
     
     return NextResponse.json(data);
   } catch (error) {
-    console.error(`Error in PUT /api/jobs/[id]/status:`, error);
+    console.error('Error in POST /api/jobs:', error);
     return NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }
