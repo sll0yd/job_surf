@@ -2,88 +2,186 @@
 
 import { useState, useEffect } from 'react';
 import Navbar from '@/components/NavBar';
+import JobStatsDashboard from '@/components/JobStatsDashboard';
+import { jobsService } from '@/lib/api-service';
+import { Job } from '@/lib/types'; // Ajout de l'import du type Job
 
-// Define proper types for analytics data
-interface MonthlyApplication {
-  name: string;
-  count: number;
+interface MonthlyData {
+  month: string;
+  applied: number;
+  interview: number;
+  offer: number;
+  rejected: number;
 }
 
-interface StatusCount {
-  name: string;
-  value: number;
-}
-
-interface AnalyticsData {
-  applicationsByMonth: MonthlyApplication[];
-  statusBreakdown: StatusCount[];
-  responseRate: number;
-  interviewRate: number;
-  offerRate: number;
-  averageResponseTime: number;
-}
-
-// Sample analytics data (replace with API call)
-const SAMPLE_DATA: AnalyticsData = {
-  applicationsByMonth: [
-    { name: 'Jan', count: 5 },
-    { name: 'Feb', count: 8 },
-    { name: 'Mar', count: 12 },
-    { name: 'Apr', count: 10 },
-    { name: 'May', count: 7 },
-    { name: 'Jun', count: 9 },
-  ],
-  statusBreakdown: [
-    { name: 'Saved', value: 10 },
-    { name: 'Applied', value: 25 },
-    { name: 'Interview', value: 8 },
-    { name: 'Offer', value: 2 },
-    { name: 'Rejected', value: 5 },
-  ],
-  responseRate: 65, // percentage
-  interviewRate: 42, // percentage
-  offerRate: 10, // percentage
-  averageResponseTime: 8.5, // days
-};
-
-export default function AnalyticsPage() {
-  const [data, setData] = useState<AnalyticsData | null>(null);
+export default function EnhancedAnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    saved: 0,
+    applied: 0,
+    interview: 0,
+    offer: 0,
+    rejected: 0,
+    responseRate: 0,
+    interviewRate: 0,
+    offerRate: 0,
+    averageResponseTime: 0
+  });
+  const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
 
-  // Simulate API call
+  // Fetch data when component mounts
   useEffect(() => {
-    setIsLoading(true);
+    const fetchAnalyticsData = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Fetch all jobs to calculate stats and trends
+        const jobs = await jobsService.getJobs();
+        
+        // Calculate basic stats
+        const totalJobs = jobs.length;
+        const savedJobs = jobs.filter(job => job.status === 'saved').length;
+        const appliedJobs = jobs.filter(job => job.status === 'applied').length;
+        const interviewJobs = jobs.filter(job => job.status === 'interview').length;
+        const offerJobs = jobs.filter(job => job.status === 'offer').length;
+        const rejectedJobs = jobs.filter(job => job.status === 'rejected').length;
+        
+        // Calculate response rate (percentage of applications that received any response)
+        const totalApplications = appliedJobs + interviewJobs + offerJobs + rejectedJobs;
+        const responsesReceived = interviewJobs + offerJobs + rejectedJobs;
+        const responseRate = totalApplications > 0 
+          ? Math.round((responsesReceived / totalApplications) * 100) 
+          : 0;
+        
+        // Calculate interview rate
+        const interviewRate = totalApplications > 0
+          ? Math.round(((interviewJobs + offerJobs) / totalApplications) * 100)
+          : 0;
+        
+        // Calculate offer rate
+        const offerRate = totalApplications > 0
+          ? Math.round((offerJobs / totalApplications) * 100)
+          : 0;
+        
+        // Calculate average response time (in days)
+        let totalResponseTime = 0;
+        let responsesWithDates = 0;
+        
+        jobs.forEach(job => {
+          if (job.applied_date && (job.interview_date || job.rejected_date)) {
+            const appliedDate = new Date(job.applied_date);
+            const responseDate = new Date(job.interview_date || job.rejected_date || '');
+            
+            // Ensure both dates are valid
+            if (!isNaN(appliedDate.getTime()) && !isNaN(responseDate.getTime())) {
+              const daysDifference = Math.floor((responseDate.getTime() - appliedDate.getTime()) / (1000 * 60 * 60 * 24));
+              
+              if (daysDifference >= 0) {
+                totalResponseTime += daysDifference;
+                responsesWithDates++;
+              }
+            }
+          }
+        });
+        
+        const averageResponseTime = responsesWithDates > 0
+          ? Math.round(totalResponseTime / responsesWithDates * 10) / 10
+          : 0;
+        
+        // Generate monthly application data
+        const monthlyStats = generateMonthlyData(jobs);
+        
+        // Update state with all calculated stats
+        setStats({
+          total: totalJobs,
+          saved: savedJobs,
+          applied: appliedJobs,
+          interview: interviewJobs,
+          offer: offerJobs,
+          rejected: rejectedJobs,
+          responseRate,
+          interviewRate,
+          offerRate,
+          averageResponseTime
+        });
+        
+        setMonthlyData(monthlyStats);
+      } catch (err) {
+        console.error('Error fetching analytics data:', err);
+        setError('Failed to load analytics data. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    // In a real app, you would fetch data from an API
-    setTimeout(() => {
-      setData(SAMPLE_DATA);
-      setIsLoading(false);
-    }, 500);
+    fetchAnalyticsData();
   }, []);
 
-  // Function to get status color
-  const getStatusColor = (status: string): string => {
-    switch (status.toLowerCase()) {
-      case 'saved':
-        return 'bg-gray-500';
-      case 'applied':
-        return 'bg-blue-500';
-      case 'interview':
-        return 'bg-purple-500';
-      case 'offer':
-        return 'bg-green-500';
-      case 'rejected':
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
+  // Generate monthly application data from jobs - using Job type instead of any
+  const generateMonthlyData = (jobs: Job[]): MonthlyData[] => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyStats: Record<string, MonthlyData> = {};
+    
+    // Initialize monthly data for the last 6 months
+    const today = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const monthIndex = (today.getMonth() - i + 12) % 12;
+      const monthKey = months[monthIndex];
+      monthlyStats[monthKey] = {
+        month: monthKey,
+        applied: 0,
+        interview: 0,
+        offer: 0,
+        rejected: 0
+      };
     }
+    
+    // Populate with actual data
+    jobs.forEach(job => {
+      // Only include jobs with dates
+      if (job.applied_date) {
+        try {
+          const appliedDate = new Date(job.applied_date);
+          
+          // Verify the date is valid
+          if (!isNaN(appliedDate.getTime())) {
+            // Only include jobs from the last 6 months
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+            
+            if (appliedDate >= sixMonthsAgo) {
+              const monthKey = months[appliedDate.getMonth()];
+              
+              // Only count if this month is in our tracking period
+              if (monthlyStats[monthKey]) {
+                // Count by status
+                if (job.status === 'applied') {
+                  monthlyStats[monthKey].applied++;
+                } else if (job.status === 'interview') {
+                  monthlyStats[monthKey].interview++;
+                } else if (job.status === 'offer') {
+                  monthlyStats[monthKey].offer++;
+                } else if (job.status === 'rejected') {
+                  monthlyStats[monthKey].rejected++;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore date parsing errors and continue with the next job
+          console.warn('Error parsing job date:', e);
+        }
+      }
+    });
+    
+    // Convert the record to an array
+    return Object.values(monthlyStats);
   };
 
-  // Function to calculate bar height based on maximum value
-  const calculateBarHeight = (value: number, maxValue: number): number => {
-    return (value / maxValue) * 100;
-  };
-
+  // Display loading state
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -101,25 +199,40 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (!data) {
+  // Display error state
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-          <div className="py-20 text-center">
-            <h1 className="text-2xl font-bold text-gray-900">No data available</h1>
-            <p className="mt-4 text-gray-500">There is not enough data to generate analytics. Try adding more job applications first.</p>
+          <div className="bg-red-50 p-4 rounded-md">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">Error</h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{error}</p>
+                </div>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </main>
       </div>
     );
   }
-
-  // Calculate maximum value for the bar chart
-  const maxApplications = Math.max(...data.applicationsByMonth.map(item => item.count));
-
-  // Calculate total status count for percentage calculation
-  const totalStatusCount = data.statusBreakdown.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -128,181 +241,176 @@ export default function AnalyticsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Analytics</h1>
+            <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Job Search Analytics</h1>
             <p className="mt-1 text-sm text-gray-500">
               Track your job search performance and gain insights from your application data.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Response Rate */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Response Rate</dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">{data.responseRate}%</dd>
-              <p className="mt-2 text-sm text-gray-500">Percentage of applications that received a response</p>
-            </div>
-          </div>
-
-          {/* Interview Rate */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Interview Rate</dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">{data.interviewRate}%</dd>
-              <p className="mt-2 text-sm text-gray-500">Percentage of applications that led to interviews</p>
-            </div>
-          </div>
-
-          {/* Offer Rate */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Offer Rate</dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">{data.offerRate}%</dd>
-              <p className="mt-2 text-sm text-gray-500">Percentage of applications that resulted in job offers</p>
-            </div>
-          </div>
-
-          {/* Average Response Time */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Avg. Response Time</dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">{data.averageResponseTime} days</dd>
-              <p className="mt-2 text-sm text-gray-500">Average time to receive a response after applying</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* Applications by Month */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Applications by Month</h3>
-              <p className="mt-1 text-sm text-gray-500">Number of job applications submitted each month</p>
-              
-              <div className="mt-6 h-64 flex items-end space-x-2 overflow-hidden">
-                {data.applicationsByMonth.map((month) => (
-                  <div key={month.name} className="relative flex-1 flex flex-col items-center">
-                    <div 
-                      className="absolute bottom-0 w-full bg-indigo-500 rounded-t-sm"
-                      style={{ height: `${calculateBarHeight(month.count, maxApplications)}%` }}
-                    />
-                    <div className="w-full text-center mt-2 z-10">
-                      <div className="text-sm font-medium text-gray-500">{month.name}</div>
-                      <div className="text-sm font-semibold text-gray-900">{month.count}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Status Breakdown */}
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Applications by Status</h3>
-              <p className="mt-1 text-sm text-gray-500">Distribution of job applications by current status</p>
-              
-              <div className="mt-6 space-y-4">
-                {data.statusBreakdown.map((status) => (
-                  <div key={status.name} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <div className={`h-4 w-4 rounded-full ${getStatusColor(status.name)} mr-2`} />
-                        <span className="text-sm font-medium text-gray-900">{status.name}</span>
-                      </div>
-                      <span className="text-sm font-medium text-gray-500">{status.value}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div 
-                        className={`h-2.5 rounded-full ${getStatusColor(status.name)}`} 
-                        style={{ width: `${(status.value / totalStatusCount) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Additional insights */}
-        <div className="mt-8">
-          <div className="bg-white overflow-hidden shadow-sm rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Job Search Insights</h3>
+        {/* Main dashboard component */}
+        <JobStatsDashboard
+          totalJobs={stats.total}
+          saved={stats.saved}
+          applied={stats.applied}
+          interview={stats.interview}
+          offer={stats.offer}
+          rejected={stats.rejected}
+          monthlyData={monthlyData}
+        />
+        
+        {/* Additional metrics section */}
+        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Detailed Metrics</h3>
+          
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <h4 className="text-sm font-medium text-gray-500">Response Rate</h4>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.responseRate}%</p>
               <p className="mt-1 text-sm text-gray-500">
-                Recommendations based on your job application data
+                Percentage of applications that received a response
               </p>
-              
-              <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="ml-3">
-                      <h4 className="text-sm font-medium text-blue-800">Response Rate Analysis</h4>
-                      <p className="mt-1 text-sm text-blue-700">
-                        Your response rate is {data.responseRate}%, which is {data.responseRate > 50 ? 'above' : 'below'} the average of 50%. 
-                        {data.responseRate < 50 ? ' Consider tailoring your resume more specifically to each job.' : ' Great job!'}
-                      </p>
-                    </div>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-500">Interview Rate</h4>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.interviewRate}%</p>
+              <p className="mt-1 text-sm text-gray-500">
+                Percentage of applications that led to interviews
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-500">Offer Rate</h4>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.offerRate}%</p>
+              <p className="mt-1 text-sm text-gray-500">
+                Percentage of applications that resulted in job offers
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-500">Avg. Response Time</h4>
+              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.averageResponseTime} days</p>
+              <p className="mt-1 text-sm text-gray-500">
+                Average time to receive a response after applying
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Recommendations section */}
+        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Personalized Recommendations</h3>
+          
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Conditional recommendations based on stats */}
+            {stats.total === 0 && (
+              <div className="bg-indigo-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-indigo-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
                   </div>
-                </div>
-                
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="ml-3">
-                      <h4 className="text-sm font-medium text-green-800">Interview Performance</h4>
-                      <p className="mt-1 text-sm text-green-700">
-                        Your interview-to-offer conversion rate is {Math.round((data.offerRate / data.interviewRate) * 100)}%. 
-                        Focus on improving your interview skills to increase this rate.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div className="ml-3">
-                      <h4 className="text-sm font-medium text-purple-800">Application Timing</h4>
-                      <p className="mt-1 text-sm text-purple-700">
-                        You submitted the most applications in March. Consider increasing your application volume consistently each month.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="ml-3">
-                      <h4 className="text-sm font-medium text-yellow-800">Response Time</h4>
-                      <p className="mt-1 text-sm text-yellow-700">
-                        The average response time is {data.averageResponseTime} days. Consider following up if you haven&apos;t heard back within 10-14 days.
-                      </p>
-                    </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-indigo-800">Get Started</h4>
+                    <p className="mt-1 text-sm text-indigo-700">
+                      Start by adding jobs you&apos;re interested in. Even saved jobs help you track opportunities you want to pursue.
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
+            
+            {stats.responseRate < 30 && stats.applied > 5 && (
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-blue-800">Improve Your Response Rate</h4>
+                    <p className="mt-1 text-sm text-blue-700">
+                      Your response rate is below average. Try tailoring your resume more specifically to each job and include a customized cover letter.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {stats.applied === 0 && stats.saved > 0 && (
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-green-800">Take Action</h4>
+                    <p className="mt-1 text-sm text-green-700">
+                      You have {stats.saved} saved jobs but haven&apos;t applied to any yet. Set aside time this week to start submitting applications.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {stats.interview > 0 && stats.offer === 0 && (
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-purple-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-purple-800">Interview Skills</h4>
+                    <p className="mt-1 text-sm text-purple-700">
+                      You&apos;re getting interviews but not offers. Consider practicing with mock interviews or review common questions for your industry.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {stats.rejected > 0 && stats.rejected / stats.total > 0.5 && (
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-yellow-800">Broaden Your Search</h4>
+                    <p className="mt-1 text-sm text-yellow-700">
+                      Your rejection rate is high. Consider applying to a wider range of positions or industries that match your skills.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {stats.total > 0 && stats.total < 10 && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-gray-800">Increase Volume</h4>
+                    <p className="mt-1 text-sm text-gray-700">
+                      You have fewer than 10 applications. For a successful job search, aim to apply to at least 10-15 jobs per week.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
