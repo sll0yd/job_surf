@@ -6,13 +6,21 @@ import {
   JobFilterParams,
   DashboardStats,
   ActivityData 
-} from './type-exports';
-import { getErrorMessage } from './error-handling';
+} from './types';
+import { supabase } from './supabase';
 
 /**
  * Base API URL - automatically uses the correct URL based on environment
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+
+/**
+ * Get error message from various error types
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 /**
  * Generic function to handle API requests
@@ -23,6 +31,13 @@ async function apiRequest<T>(
   data?: unknown
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  
+  // Check for current session
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    throw new Error('Authentication required. Please sign in.');
+  }
   
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -41,7 +56,12 @@ async function apiRequest<T>(
   try {
     const response = await fetch(url, options);
     
-    // Handle HTTP error responses
+    // Handle unauthorized errors specifically
+    if (response.status === 401) {
+      throw new Error('Your session has expired. Please sign in again.');
+    }
+    
+    // Handle other HTTP error responses
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
@@ -67,6 +87,12 @@ export const jobsService = {
    */
   async getJobs(filters?: JobFilterParams): Promise<Job[]> {
     try {
+      // First check if we have a session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Authentication required');
+      }
+      
       const queryParams = new URLSearchParams();
       
       if (filters?.status) {
@@ -86,10 +112,10 @@ export const jobsService = {
       }
       
       const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-      return apiRequest<Job[]>(`/jobs${query}`);
+      return await apiRequest<Job[]>(`/jobs${query}`);
     } catch (error) {
       console.error('Error fetching jobs:', error);
-      throw new Error(getErrorMessage(error));
+      throw new Error(`Failed to fetch jobs: ${getErrorMessage(error)}`);
     }
   },
   
@@ -98,7 +124,7 @@ export const jobsService = {
    */
   async getJob(id: string): Promise<Job> {
     try {
-      return apiRequest<Job>(`/jobs/${id}`);
+      return await apiRequest<Job>(`/jobs/${id}`);
     } catch (error) {
       console.error('Error fetching job:', error);
       throw new Error(`Failed to fetch job: ${getErrorMessage(error)}`);
@@ -110,7 +136,7 @@ export const jobsService = {
    */
   async createJob(jobData: JobFormData): Promise<Job> {
     try {
-      return apiRequest<Job>('/jobs', 'POST', jobData);
+      return await apiRequest<Job>('/jobs', 'POST', jobData);
     } catch (error) {
       console.error('Error creating job:', error);
       throw new Error(`Failed to create job: ${getErrorMessage(error)}`);
@@ -122,7 +148,7 @@ export const jobsService = {
    */
   async updateJob(id: string, updates: Partial<JobFormData>): Promise<Job> {
     try {
-      return apiRequest<Job>(`/jobs/${id}`, 'PUT', updates);
+      return await apiRequest<Job>(`/jobs/${id}`, 'PUT', updates);
     } catch (error) {
       console.error('Error updating job:', error);
       throw new Error(`Failed to update job: ${getErrorMessage(error)}`);
@@ -146,7 +172,7 @@ export const jobsService = {
    */
   async updateJobStatus(id: string, status: JobStatus): Promise<Job> {
     try {
-      return apiRequest<Job>(`/jobs/${id}/status`, 'PUT', { status });
+      return await apiRequest<Job>(`/jobs/${id}/status`, 'PUT', { status });
     } catch (error) {
       console.error('Error updating job status:', error);
       throw new Error(`Failed to update status: ${getErrorMessage(error)}`);
@@ -158,7 +184,7 @@ export const jobsService = {
    */
   async addNote(id: string, note: string): Promise<Job> {
     try {
-      return apiRequest<Job>(`/jobs/${id}/notes`, 'POST', { note });
+      return await apiRequest<Job>(`/jobs/${id}/notes`, 'POST', { note });
     } catch (error) {
       console.error('Error adding note:', error);
       throw new Error(`Failed to add note: ${getErrorMessage(error)}`);
@@ -170,10 +196,33 @@ export const jobsService = {
    */
   async getDashboardStats(): Promise<DashboardStats> {
     try {
-      return apiRequest<DashboardStats>('/dashboard/stats');
+      // Check for session first to avoid redirect loop
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return {
+          total: 0,
+          saved: 0,
+          applied: 0,
+          interview: 0,
+          offer: 0,
+          rejected: 0,
+        } as DashboardStats;
+      }
+      
+      // Fetch stats from server
+      return await apiRequest<DashboardStats>('/dashboard/stats');
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
-      throw new Error(`Failed to fetch dashboard stats: ${getErrorMessage(error)}`);
+      
+      // Return default empty stats on error instead of crashing
+      return {
+        total: 0,
+        saved: 0,
+        applied: 0,
+        interview: 0,
+        offer: 0,
+        rejected: 0,
+      } as DashboardStats;
     }
   },
   
@@ -182,10 +231,30 @@ export const jobsService = {
    */
   async getActivities(limit: number = 10): Promise<ActivityData[]> {
     try {
-      return apiRequest<ActivityData[]>(`/activities?limit=${limit}`);
+      // Check for session first
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return [];
+      }
+      
+      return await apiRequest<ActivityData[]>(`/activities?limit=${limit}`);
     } catch (error) {
       console.error('Error fetching activities:', error);
-      throw new Error(`Failed to fetch activities: ${getErrorMessage(error)}`);
+      // Return empty array on error to avoid crashing
+      return [];
     }
   },
+  
+  /**
+   * Get user authentication status
+   */
+  async checkAuthStatus(): Promise<boolean> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return !!session;
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      return false;
+    }
+  }
 };

@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/NavBar';
 import DashboardStats from '@/components/DashboardStats';
 import ActivityFeed from '@/components/ActivityFeed';
-import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth-context';
 import { jobsService } from '@/lib/api-service';
 import { JobStatus } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
 
 // Define types for our data
 interface StatsData {
@@ -58,71 +60,110 @@ export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [recentJobs, setRecentJobs] = useState<JobData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
+  const router = useRouter();
+
+  // Check authentication and redirect to login if needed
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        // Redirect to login if not authenticated
+        router.push('/signin');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   // Fetch data from API on component mount
   useEffect(() => {
     const fetchDashboardData = async () => {
       setIsLoading(true);
+      setError(null);
       
       try {
-        // Fetch stats data
-        const statsData = await jobsService.getDashboardStats();
-        setStats(statsData);
+        // First check auth status
+        const isAuthenticated = await jobsService.checkAuthStatus();
+        if (!isAuthenticated) {
+          router.push('/signin');
+          return;
+        }
+        
+        // Fetch stats data with error handling
+        try {
+          const statsData = await jobsService.getDashboardStats();
+          setStats(statsData);
+        } catch (err) {
+          console.error('Error fetching stats:', err);
+          // Continue with empty stats rather than failing completely
+        }
         
         // Fetch activities data - limit to 5 most recent
-        const activitiesData: ApiActivityData[] = await jobsService.getActivities(5);
-        
-        // Convert ApiActivityData to Activity expected by ActivityFeed component
-        const mappedActivities = activitiesData.map(activity => {
-          // Filter out 'job_deleted' type since ActivityFeed doesn't support it
-          if (activity.type === 'job_deleted') {
+        try {
+          const activitiesData: ApiActivityData[] = await jobsService.getActivities(5);
+          
+          // Convert ApiActivityData to Activity expected by ActivityFeed component
+          const mappedActivities = activitiesData.map(activity => {
+            // Filter out 'job_deleted' type since ActivityFeed doesn't support it
+            if (activity.activity_type === 'job_deleted') {
+              return {
+                ...activity,
+                id: activity.id,
+                type: 'job_updated' as const, // Map to a supported type
+                date: activity.created_at,
+                description: activity.description,
+                job: activity.job
+              };
+            }
+            
             return {
-              ...activity,
-              type: 'job_updated' // Map to a supported type
-            } as Activity;
-          }
-          return activity as Activity;
-        });
+              id: activity.id,
+              type: activity.activity_type as 'job_created' | 'status_changed' | 'note_added' | 'job_updated',
+              date: activity.created_at,
+              description: activity.description,
+              job: activity.job
+            };
+          });
+          
+          setActivities(mappedActivities);
+        } catch (err) {
+          console.error('Error fetching activities:', err);
+          // Continue with empty activities
+        }
         
-        setActivities(mappedActivities);
-        
-        // Fetch recent jobs - in a real app you would have a dedicated API endpoint
-        const jobsData = await jobsService.getJobs();
-        // Sort by created date and take the 3 most recent
-        const sortedJobs = jobsData
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 3)
-          .map(job => ({
-            id: job.id,
-            company: job.company,
-            position: job.position,
-            status: job.status,
-            date: job.created_at
-          }));
-        
-        setRecentJobs(sortedJobs);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        // In case of error, use fallback data
-        // This avoids showing empty UI which would be confusing
-        setStats({
-          total: 0,
-          saved: 0,
-          applied: 0,
-          interview: 0,
-          offer: 0,
-          rejected: 0
-        });
-        setActivities([]);
-        setRecentJobs([]);
+        // Fetch recent jobs
+        try {
+          const jobsData = await jobsService.getJobs();
+          // Sort by created date and take the 3 most recent
+          const sortedJobs = jobsData
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .slice(0, 3)
+            .map(job => ({
+              id: job.id,
+              company: job.company,
+              position: job.position,
+              status: job.status,
+              date: job.created_at
+            }));
+          
+          setRecentJobs(sortedJobs);
+        } catch (err) {
+          console.error('Error fetching jobs:', err);
+          // Continue with empty recent jobs
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+        setError('Failed to load dashboard data. Please check your connection and try again.');
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, []);
+  }, [router]);
 
   // Function to get status badge color - moved outside the JSX for cleaner code
   const getStatusColor = (status: JobStatus): string => {
@@ -185,6 +226,31 @@ export default function Dashboard() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
               <p className="mt-4 text-gray-500">Loading your dashboard...</p>
+            </div>
+          ) : error ? (
+            <div className="rounded-md bg-red-50 p-4 mb-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Error</h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{error}</p>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -267,11 +333,11 @@ export default function Dashboard() {
                                 {capitalizeStatus(job.status)}
                               </span>
                             </div>
-                            <p className="text-sm text-gray-500 mt-1">{job.position}</p>
+                            <p className="mt-1 text-sm text-gray-500">{job.position}</p>
                             <p className="text-xs text-gray-400 mt-1">Added on {formatDate(job.date)}</p>
                             <div className="mt-2">
                               <Link href={`/jobs/${job.id}`} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
-                                View details &rarr;
+                                View details →
                               </Link>
                             </div>
                           </div>
