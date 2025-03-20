@@ -3,15 +3,21 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { Database } from '@/lib/database.types';
 
+type ContextParams = {
+  params: {
+    id: string;
+  };
+};
+
 /**
  * POST /api/jobs/[id]/notes - Add a note to a job
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: ContextParams
 ) {
   try {
-    const jobId = params.id;
+    const jobId = context.params.id;
     
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
