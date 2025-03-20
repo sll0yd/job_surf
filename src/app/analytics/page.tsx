@@ -1,23 +1,41 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/NavBar';
-import JobStatsDashboard from '@/components/JobStatsDashboard';
+import { supabase } from '@/lib/supabase';
 import { jobsService } from '@/lib/api-service';
-import { Job } from '@/lib/types'; // Ajout de l'import du type Job
+import { Job } from '@/lib/types';
+
+// Import the JobSearchAnalytics component
+import JobSearchAnalytics from '@/components/JobSearchAnalytics';
 
 interface MonthlyData {
   month: string;
+  applications: number;
+  interviews: number;
+  offers: number;
+  rejections: number;
+}
+
+interface StatsData {
+  total: number;
+  saved: number;
   applied: number;
   interview: number;
   offer: number;
   rejected: number;
+  responseRate: number;
+  interviewRate: number;
+  offerRate: number;
+  averageResponseTime: number;
 }
 
-export default function EnhancedAnalyticsPage() {
+export default function AnalyticsPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<StatsData>({
     total: 0,
     saved: 0,
     applied: 0,
@@ -31,13 +49,21 @@ export default function EnhancedAnalyticsPage() {
   });
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
 
-  // Fetch data when component mounts
+  // Check if user is authenticated and fetch data
   useEffect(() => {
-    const fetchAnalyticsData = async () => {
+    const initializePage = async () => {
       setIsLoading(true);
       setError(null);
       
       try {
+        // Check authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          router.push('/signin');
+          return;
+        }
+        
         // Fetch all jobs to calculate stats and trends
         const jobs = await jobsService.getJobs();
         
@@ -117,10 +143,10 @@ export default function EnhancedAnalyticsPage() {
       }
     };
     
-    fetchAnalyticsData();
-  }, []);
+    initializePage();
+  }, [router]);
 
-  // Generate monthly application data from jobs - using Job type instead of any
+  // Generate monthly application data from jobs
   const generateMonthlyData = (jobs: Job[]): MonthlyData[] => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const monthlyStats: Record<string, MonthlyData> = {};
@@ -129,19 +155,21 @@ export default function EnhancedAnalyticsPage() {
     const today = new Date();
     for (let i = 5; i >= 0; i--) {
       const monthIndex = (today.getMonth() - i + 12) % 12;
+      const yearMonthKey = `${today.getFullYear()}-${monthIndex}`;
       const monthKey = months[monthIndex];
-      monthlyStats[monthKey] = {
+      
+      monthlyStats[yearMonthKey] = {
         month: monthKey,
-        applied: 0,
-        interview: 0,
-        offer: 0,
-        rejected: 0
+        applications: 0,
+        interviews: 0,
+        offers: 0,
+        rejections: 0
       };
     }
     
     // Populate with actual data
     jobs.forEach(job => {
-      // Only include jobs with dates
+      // Only include jobs with applied dates
       if (job.applied_date) {
         try {
           const appliedDate = new Date(job.applied_date);
@@ -153,19 +181,20 @@ export default function EnhancedAnalyticsPage() {
             sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
             
             if (appliedDate >= sixMonthsAgo) {
+              const yearMonthKey = `${appliedDate.getFullYear()}-${appliedDate.getMonth()}`;
               const monthKey = months[appliedDate.getMonth()];
               
               // Only count if this month is in our tracking period
-              if (monthlyStats[monthKey]) {
+              if (monthlyStats[yearMonthKey]) {
+                monthlyStats[yearMonthKey].applications++;
+                
                 // Count by status
-                if (job.status === 'applied') {
-                  monthlyStats[monthKey].applied++;
-                } else if (job.status === 'interview') {
-                  monthlyStats[monthKey].interview++;
+                if (job.status === 'interview') {
+                  monthlyStats[yearMonthKey].interviews++;
                 } else if (job.status === 'offer') {
-                  monthlyStats[monthKey].offer++;
+                  monthlyStats[yearMonthKey].offers++;
                 } else if (job.status === 'rejected') {
-                  monthlyStats[monthKey].rejected++;
+                  monthlyStats[yearMonthKey].rejections++;
                 }
               }
             }
@@ -177,7 +206,7 @@ export default function EnhancedAnalyticsPage() {
       }
     });
     
-    // Convert the record to an array
+    // Convert the record to an array and sort by month order
     return Object.values(monthlyStats);
   };
 
@@ -241,178 +270,20 @@ export default function EnhancedAnalyticsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Job Search Analytics</h1>
+            <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+              Job Search Analytics
+            </h1>
             <p className="mt-1 text-sm text-gray-500">
               Track your job search performance and gain insights from your application data.
             </p>
           </div>
         </div>
 
-        {/* Main dashboard component */}
-        <JobStatsDashboard
-          totalJobs={stats.total}
-          saved={stats.saved}
-          applied={stats.applied}
-          interview={stats.interview}
-          offer={stats.offer}
-          rejected={stats.rejected}
-          monthlyData={monthlyData}
+        {/* Pass the calculated data to the JobSearchAnalytics component */}
+        <JobSearchAnalytics 
+          stats={stats} 
+          monthlyData={monthlyData} 
         />
-        
-        {/* Additional metrics section */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Detailed Metrics</h3>
-          
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <h4 className="text-sm font-medium text-gray-500">Response Rate</h4>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.responseRate}%</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Percentage of applications that received a response
-              </p>
-            </div>
-            
-            <div>
-              <h4 className="text-sm font-medium text-gray-500">Interview Rate</h4>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.interviewRate}%</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Percentage of applications that led to interviews
-              </p>
-            </div>
-            
-            <div>
-              <h4 className="text-sm font-medium text-gray-500">Offer Rate</h4>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.offerRate}%</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Percentage of applications that resulted in job offers
-              </p>
-            </div>
-            
-            <div>
-              <h4 className="text-sm font-medium text-gray-500">Avg. Response Time</h4>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.averageResponseTime} days</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Average time to receive a response after applying
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Recommendations section */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Personalized Recommendations</h3>
-          
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* Conditional recommendations based on stats */}
-            {stats.total === 0 && (
-              <div className="bg-indigo-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-indigo-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-indigo-800">Get Started</h4>
-                    <p className="mt-1 text-sm text-indigo-700">
-                      Start by adding jobs you&apos;re interested in. Even saved jobs help you track opportunities you want to pursue.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {stats.responseRate < 30 && stats.applied > 5 && (
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-blue-800">Improve Your Response Rate</h4>
-                    <p className="mt-1 text-sm text-blue-700">
-                      Your response rate is below average. Try tailoring your resume more specifically to each job and include a customized cover letter.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {stats.applied === 0 && stats.saved > 0 && (
-              <div className="bg-green-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-green-800">Take Action</h4>
-                    <p className="mt-1 text-sm text-green-700">
-                      You have {stats.saved} saved jobs but haven&apos;t applied to any yet. Set aside time this week to start submitting applications.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {stats.interview > 0 && stats.offer === 0 && (
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-purple-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-purple-800">Interview Skills</h4>
-                    <p className="mt-1 text-sm text-purple-700">
-                      You&apos;re getting interviews but not offers. Consider practicing with mock interviews or review common questions for your industry.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {stats.rejected > 0 && stats.rejected / stats.total > 0.5 && (
-              <div className="bg-yellow-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-yellow-800">Broaden Your Search</h4>
-                    <p className="mt-1 text-sm text-yellow-700">
-                      Your rejection rate is high. Consider applying to a wider range of positions or industries that match your skills.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {stats.total > 0 && stats.total < 10 && (
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-sm font-medium text-gray-800">Increase Volume</h4>
-                    <p className="mt-1 text-sm text-gray-700">
-                      You have fewer than 10 applications. For a successful job search, aim to apply to at least 10-15 jobs per week.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </main>
     </div>
   );
