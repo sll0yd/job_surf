@@ -8,10 +8,10 @@ import { Database } from '@/lib/database.types';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    const jobId = params.id;
+    const jobId = context.params.id;
     
     // Initialize Supabase client
     const supabase = createRouteHandlerClient<Database>({ cookies });
